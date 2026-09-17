@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "SlipClip for Notion",
+  "version": "1.0.0",
+  "description": "Clip an article, video or link into Notion. Sign in with Notion, nothing to paste.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "identity",
+    "webRequest",
+    "webRequestBlocking"
+  ],
+  "host_permissions": [
+    "https://mcp.notion.com/*"
+  ],
+  "background": {
+    "page": "background.html"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "slipclip@todorx.dev",
+      "strict_min_version": "109.0"
+    }
+  },
+  "homepage_url": "https://slipclip.todorx.dev"
+}

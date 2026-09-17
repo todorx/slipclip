@@ -1,0 +1,217 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: #ffffff;
+  --sunk: #f6f6f4;
+  --edge: #e6e6e1;
+  --ink: #1b1b19;
+  --muted: #76766e;
+  --mark: #ffd54a;
+  --bad: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1b1b1a;
+    --sunk: #252523;
+    --edge: #34342f;
+    --ink: #efefe9;
+    --muted: #9a9a90;
+    --mark: #e8b32c;
+    --bad: #ff8a75;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 340px;
+  margin: 0;
+  padding: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 13.5px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+/* Header: state on the left, the one account action on the right. */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+#state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+body[data-connected="true"] #state::before {
+  background: var(--mark);
+  box-shadow: 0 0 0 3px rgba(255, 213, 74, .26);
+}
+
+#connect {
+  flex: none;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+
+#connect:hover { color: var(--ink); border-color: var(--ink); }
+
+label { display: block; margin-bottom: 12px; }
+
+.lab {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input, select {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--sunk);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  appearance: none;
+  transition: border-color .15s, background .15s;
+}
+
+input::placeholder { color: var(--muted); }
+
+input:focus-visible, select:focus-visible {
+  outline: none;
+  background: var(--paper);
+  border-color: var(--ink);
+}
+
+select {
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2376766e' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+select:disabled { opacity: .45; }
+
+/* Dashed: this is the fallback route, not a peer of the dropdown. */
+#parent {
+  background: none;
+  border: 1px dashed var(--edge);
+}
+
+#parent:focus-visible { border-style: solid; }
+
+#clip {
+  width: 100%;
+  margin-top: 2px;
+  padding: 11px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--ink);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+#clip:hover:not(:disabled) { background: var(--mark); color: #1b1b19; }
+#clip:disabled { opacity: .35; cursor: not-allowed; }
+
+#status {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+#status[data-tone="error"] { color: var(--bad); }
+
+.note {
+  margin-top: 14px;
+  padding-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px solid var(--edge);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span id="state">Not connected</span>
+  <button id="connect">Connect Notion</button>
+</div>
+
+<label>
+  <span class="lab">Search</span>
+  <input id="q" placeholder="Find a page, or leave blank">
+</label>
+
+<label>
+  <span class="lab">Destination</span>
+  <select id="picker"><option value="">Connect to load pages</option></select>
+</label>
+
+<label>
+  <span class="lab">Or paste a link</span>
+  <input id="parent" placeholder="Notion page or database">
+</label>
+
+<label>
+  <span class="lab">Save as</span>
+  <select id="mode">
+    <option value="child">A new page inside</option>
+    <option value="append">Added to the end</option>
+  </select>
+</label>
+
+<label>
+  <span class="lab">Title</span>
+  <input id="title" placeholder="Defaults to the page title">
+</label>
+
+<button id="clip" disabled>Clip this page</button>
+<div id="status"></div>
+
+<p class="note">Clips reach only the pages you shared on Notion's consent screen.</p>
+
+<script type="module" src="popup.js"></script>
+</body>
+</html>

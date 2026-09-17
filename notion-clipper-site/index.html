@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>SlipClip for Notion — clip the page, not the page furniture</title>
+<meta name="description" content="A Firefox extension that reads the article and files clean Markdown into Notion. Skips nav, comments and recommendations. Signs in with Notion — no integration token to paste, no server in the middle.">
+<link rel="canonical" href="https://slipclip.todorx.dev/">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://slipclip.todorx.dev/">
+<meta property="og:site_name" content="SlipClip">
+<meta property="og:title" content="SlipClip for Notion">
+<meta property="og:description" content="Clip the article, not the page furniture. Clean Markdown into any Notion page or database.">
+<meta property="og:image" content="https://slipclip.todorx.dev/og.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SlipClip for Notion">
+<meta name="twitter:description" content="Clip the article, not the page furniture. Clean Markdown into any Notion page or database.">
+<meta name="twitter:image" content="https://slipclip.todorx.dev/og.svg">
+<meta name="theme-color" content="#0b0b0c">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>document.documentElement.classList.add("js")</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "SlipClip for Notion",
+  "applicationCategory": "BrowserApplication",
+  "operatingSystem": "Firefox",
+  "url": "https://slipclip.todorx.dev/",
+  "description": "A Firefox extension that extracts the readable article from a web page and files it into Notion as Markdown.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isAccessibleForFree": true,
+  "license": "https://github.com/todorx/slipclip",
+  "codeRepository": "https://github.com/todorx/slipclip"
+}
+</script>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="top">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <rect width="100" height="100" rx="22" fill="#141412"/>
+        <g transform="rotate(-8 50 50)">
+          <rect x="28" y="21" width="44" height="58" rx="5" fill="#fafaf7"/>
+          <rect x="36" y="37" width="28" height="7" rx="3.5" fill="#ffd54a"/>
+          <rect x="36" y="51" width="28" height="3.5" rx="1.75" fill="#c6c6be"/>
+          <rect x="36" y="60" width="19" height="3.5" rx="1.75" fill="#c6c6be"/>
+        </g>
+      </svg>
+      SlipClip
+    </a>
+    <nav>
+      <a href="#clips">What it clips</a>
+      <a href="#signin">Signing in</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/todorx/slipclip">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero wrap">
+  <span class="eyebrow">Firefox extension</span>
+  <h1>Clip the article. <em>Not the furniture.</em></h1>
+  <p class="lede">
+    SlipClip reads the page the way a reader does — finds the article, drops the nav,
+    the comments and the recommendation rail — and files clean Markdown into any
+    Notion page or database.
+  </p>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="https://github.com/todorx/slipclip/releases">Get the latest build</a>
+    <a class="btn btn-ghost" href="https://github.com/todorx/slipclip">Read the source</a>
+  </div>
+  <p class="fineprint">Firefox 109+. Free and open source. Not yet listed on addons.mozilla.org.</p>
+
+  <div class="stage" id="stage" aria-hidden="true">
+    <div class="card source">
+      <span class="chrome"><i></i><i></i><i></i></span>
+      <div class="block junk" style="--i:0; height:14px; width:70%"></div>
+      <div class="block junk" style="--i:1; height:26px; width:100%"></div>
+      <div class="block text" style="--i:0; height:9px; width:88%"></div>
+      <div class="block text" style="--i:1; height:9px; width:94%"></div>
+      <div class="block text" style="--i:2; height:9px; width:72%"></div>
+      <div class="block junk" style="--i:2; height:34px; width:100%"></div>
+      <div class="block junk" style="--i:3; height:12px; width:56%"></div>
+      <div class="block junk" style="--i:4; height:12px; width:64%"></div>
+    </div>
+
+    <div class="arrow">CLIP →</div>
+
+    <div class="card slip">
+      <span class="h" style="--i:0">## The Case for Slow Software</span>
+      <span class="facts" style="--i:1">*Craft Weekly · R. Ellis · 2026-03-18*</span>
+      <span style="--i:2">&nbsp;</span>
+      <span style="--i:3">Most tools are built to be&nbsp;</span>
+      <span style="--i:4">demoed, <span class="hl">not lived with</span>.</span>
+      <span style="--i:5">&nbsp;</span>
+      <span style="--i:6">- No nav. No comments.</span>
+      <span style="--i:7">- No recommendation rail.</span>
+    </div>
+  </div>
+</section>
+
+<section id="clips" class="wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">What it clips</span>
+    <h2>The page says what it is. SlipClip listens.</h2>
+    <p>
+      Pages declare their own type in JSON-LD and microdata. That, rather than a text
+      heuristic, decides how much gets taken — which is why a video page never turns
+      into a wall of comments.
+    </p>
+  </div>
+
+  <div class="grid">
+    <article class="tile reveal">
+      <h3>An article</h3>
+      <p>Site, author, date, then the whole body as Markdown. Headings, lists, quotes and code survive the trip.</p>
+      <pre>## [The Case for Slow Software](…)
+
+*Craft Weekly · R. Ellis · 2026-03-18*
+
+Most tools are built to be demoed,
+not lived with…</pre>
+    </article>
+
+    <article class="tile reveal">
+      <h3>A video</h3>
+      <p>Title, channel, duration, upload date, description. The body walker never runs, so nothing below the player comes along.</p>
+      <pre>## [Designing for Focus](…)
+
+*A Channel · 2026-03-02 · 1:02:03*
+
+What the talk covers…</pre>
+    </article>
+
+    <article class="tile reveal">
+      <h3>An index</h3>
+      <p>Listing pages have no prose to extract — their links are the content. So the links are what you get, deduplicated.</p>
+      <pre>## [Executive Orders](…)
+
+*Federal Register*
+
+- Executive Order 14100
+- Executive Order 14101</pre>
+    </article>
+  </div>
+</section>
+
+<section id="signin" class="wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">Signing in</span>
+    <h2>Nothing to paste. Nothing in the middle.</h2>
+    <p>
+      Notion's REST OAuth needs a client secret, which means a server. SlipClip talks to
+      Notion's MCP endpoint instead — OAuth 2.1 with PKCE and dynamic client registration,
+      built for clients that cannot keep a secret.
+    </p>
+  </div>
+
+  <div class="steps">
+    <div class="step reveal">
+      <div>
+        <h3>Each install registers itself</h3>
+        <p>No shared API key to rate-limit, revoke or leak. Your copy is its own OAuth client, created the first time you connect.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div>
+        <h3>You choose the pages</h3>
+        <p>Notion's own consent screen decides what SlipClip can reach. Nothing outside what you picked is visible to it — not to the extension, not to anyone.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div>
+        <h3>Your browser talks to Notion directly</h3>
+        <p>There is no SlipClip server. Nothing is proxied, logged or stored anywhere but your browser and your workspace.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">What it doesn't do</span>
+    <h2>A short list, kept short on purpose.</h2>
+  </div>
+  <div class="plain">
+    <div class="reveal"><h3>No account</h3><p>There is nothing to sign up for. Your Notion login is the only one involved.</p></div>
+    <div class="reveal"><h3>No analytics</h3><p>No telemetry, no error reporting, no pixel. The extension makes requests to Notion and to nowhere else.</p></div>
+    <div class="reveal"><h3>No background reading</h3><p>Pages are read only at the moment you press Clip, and only the tab you are looking at.</p></div>
+    <div class="reveal"><h3>No lock-in</h3><p>Output is plain Markdown in your own Notion pages. Uninstalling leaves every clip exactly where it is.</p></div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>SlipClip for Notion · v1.0.0</span>
+    <span>
+      <a href="privacy.html">Privacy</a> ·
+      <a href="https://github.com/todorx/slipclip">GitHub</a> ·
+      <a href="https://github.com/todorx/slipclip/issues">Report an issue</a>
+    </span>
+    <span>Not affiliated with Notion Labs, Inc.</span>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>

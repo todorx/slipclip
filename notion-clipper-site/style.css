@@ -1,0 +1,431 @@
+/* SlipClip for Notion — dark cinematic ground, real paper slips floating in it.
+   The paper/dark duality is the page's thesis: a messy lit web page becoming a
+   clean filed note. One accent only, the highlighter yellow. */
+
+:root {
+  --void: #0b0b0c;
+  --ink: #141412;
+  --paper: #fafaf7;
+  --mist: #8a8a80;
+  --mist-bright: #b6b6ac;
+  --mark: #ffd54a;
+  --edge: rgba(250, 250, 247, .1);
+  --edge-strong: rgba(250, 250, 247, .22);
+
+  --display: "Fraunces", Georgia, serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --gutter: clamp(20px, 5vw, 64px);
+  --measure: 1120px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--paper);
+  font: 400 17px/1.6 var(--body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Ambient light behind the fold. Cinematic depth without an image. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -30vh 0 auto 0;
+  height: 90vh;
+  background: radial-gradient(60% 55% at 50% 40%, rgba(255, 213, 74, .09), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+main, header, footer { position: relative; z-index: 1; }
+
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+a { color: inherit; }
+
+h1, h2, h3 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-variation-settings: "SOFT" 0, "WONK" 1;
+  letter-spacing: -.02em;
+  line-height: 1.04;
+  margin: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--mist);
+}
+
+.eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mark);
+}
+
+/* ---------- header ---------- */
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--display);
+  font-size: 19px;
+  letter-spacing: -.01em;
+  text-decoration: none;
+}
+
+.brand svg { width: 26px; height: 26px; border-radius: 7px; }
+
+.top nav {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  font-size: 14px;
+}
+
+.top nav a {
+  color: var(--mist-bright);
+  text-decoration: none;
+  transition: color .2s;
+}
+
+.top nav a:hover { color: var(--paper); }
+
+/* ---------- hero ---------- */
+
+.hero { padding: clamp(48px, 9vw, 110px) 0 clamp(40px, 7vw, 90px); }
+
+.hero h1 {
+  margin: 22px 0 0;
+  font-size: clamp(42px, 7.4vw, 88px);
+  max-width: 14ch;
+}
+
+.hero h1 em {
+  font-style: normal;
+  position: relative;
+  white-space: nowrap;
+}
+
+/* The highlighter, drawn as a mark under the words rather than a box around
+   them — the product's own gesture. */
+.hero h1 em::after {
+  content: "";
+  position: absolute;
+  left: -.06em;
+  right: -.06em;
+  bottom: .08em;
+  height: .34em;
+  background: var(--mark);
+  opacity: .9;
+  z-index: -1;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: swipe .7s cubic-bezier(.2, .7, .3, 1) .5s forwards;
+}
+
+@keyframes swipe { to { transform: scaleX(1); } }
+
+.lede {
+  margin: 26px 0 0;
+  max-width: 54ch;
+  font-size: clamp(17px, 1.6vw, 20px);
+  color: var(--mist-bright);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 22px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: transform .18s, background .18s, border-color .18s, color .18s;
+}
+
+.btn-primary { background: var(--paper); color: var(--ink); }
+.btn-primary:hover { background: var(--mark); transform: translateY(-2px); }
+
+.btn-ghost { border-color: var(--edge-strong); color: var(--paper); }
+.btn-ghost:hover { border-color: var(--paper); transform: translateY(-2px); }
+
+.fineprint {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--mist);
+}
+
+/* ---------- the clip stage ---------- */
+
+.stage {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: clamp(14px, 3vw, 40px);
+  margin-top: clamp(48px, 8vw, 96px);
+}
+
+.card {
+  border-radius: 14px;
+  padding: 16px;
+  min-height: 260px;
+}
+
+/* left: the live page, full of things you did not ask for */
+.source {
+  background: #161617;
+  border: 1px solid var(--edge);
+  box-shadow: 0 40px 80px -40px rgba(0, 0, 0, .9);
+}
+
+.chrome { display: flex; gap: 6px; margin-bottom: 14px; }
+.chrome i { width: 9px; height: 9px; border-radius: 50%; background: var(--edge-strong); }
+
+.block { border-radius: 4px; margin-bottom: 9px; }
+.junk { background: #2a2a2b; }
+.text { background: #dedcd2; }
+
+.stage.run .junk {
+  animation: dissolve .6s cubic-bezier(.4, 0, 1, 1) forwards;
+  animation-delay: calc(var(--i) * 70ms);
+}
+
+.stage.run .text {
+  animation: shift .7s cubic-bezier(.2, .7, .3, 1) forwards;
+  animation-delay: calc(500ms + var(--i) * 80ms);
+}
+
+@keyframes dissolve {
+  to { opacity: 0; transform: translateX(-10px) scaleY(.3); }
+}
+
+@keyframes shift {
+  to { opacity: .25; transform: translateX(26px); }
+}
+
+/* middle: the passage */
+.arrow {
+  color: var(--mist);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .1em;
+}
+
+/* Hidden-then-revealed only when scripting is available to reveal it. */
+.js .arrow { opacity: 0; transform: translateX(-8px); }
+
+.stage.run .arrow { animation: fade .5s ease .9s forwards; }
+
+/* right: the slip it becomes */
+.slip {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  box-shadow: 0 40px 90px -35px rgba(0, 0, 0, .95);
+  transform: rotate(1.2deg);
+}
+
+.slip span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.js .slip span { opacity: 0; transform: translateY(6px); }
+
+.stage.run .slip span {
+  animation: fade .45s ease forwards;
+  animation-delay: calc(1s + var(--i) * 110ms);
+}
+
+.slip .h { font-weight: 600; }
+.slip .facts { color: #7c7a70; font-style: italic; }
+.slip .hl { background: var(--mark); padding: 0 3px; }
+
+@keyframes fade { to { opacity: 1; transform: none; } }
+
+/* ---------- sections ---------- */
+
+section { padding: clamp(64px, 10vw, 128px) 0; }
+
+.section-head { max-width: 46ch; margin-bottom: clamp(36px, 5vw, 60px); }
+.section-head h2 { margin: 18px 0 0; font-size: clamp(30px, 4.4vw, 52px); }
+.section-head p { margin: 18px 0 0; color: var(--mist-bright); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.tile {
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 14px;
+  padding: 24px;
+  transition: transform .3s cubic-bezier(.2, .7, .3, 1), box-shadow .3s;
+}
+
+.tile:nth-child(2) { transform: rotate(-.7deg); }
+.tile:nth-child(3) { transform: rotate(.5deg); }
+
+.tile:hover {
+  transform: translateY(-6px) rotate(0deg);
+  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .9);
+}
+
+.tile h3 { font-size: 22px; }
+
+.tile p { margin: 10px 0 16px; font-size: 14.5px; color: #55544c; }
+
+.tile pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f0efe8;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #35342e;
+}
+
+/* numbered because signing in genuinely is a sequence */
+.steps { counter-reset: step; display: grid; gap: 2px; }
+
+.step {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 20px;
+  align-items: baseline;
+  padding: 26px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.step:last-child { border-bottom: 1px solid var(--edge); }
+
+.step::before {
+  content: counter(step, decimal-leading-zero);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .1em;
+  color: var(--mark);
+}
+
+.step h3 { font-size: 24px; }
+.step p { margin: 8px 0 0; color: var(--mist-bright); max-width: 58ch; }
+
+.plain { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+
+.plain div { border-top: 1px solid var(--edge); padding-top: 18px; }
+.plain h3 { font-family: var(--body); font-size: 15px; font-weight: 600; letter-spacing: 0; }
+.plain p { margin: 8px 0 0; font-size: 14.5px; color: var(--mist); }
+
+/* ---------- reveal ---------- */
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity .7s cubic-bezier(.2, .7, .3, 1), transform .7s cubic-bezier(.2, .7, .3, 1);
+}
+
+.js .reveal.seen { opacity: 1; transform: none; }
+
+/* ---------- footer ---------- */
+
+footer {
+  border-top: 1px solid var(--edge);
+  padding: 40px 0 56px;
+  font-size: 14px;
+  color: var(--mist);
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.foot a { color: var(--mist-bright); text-decoration: none; }
+.foot a:hover { color: var(--paper); text-decoration: underline; }
+
+/* ---------- legal pages ---------- */
+
+.doc { padding: clamp(40px, 7vw, 86px) 0 clamp(60px, 9vw, 110px); max-width: 74ch; }
+.doc h1 { font-size: clamp(34px, 5vw, 58px); }
+.doc h2 { font-size: clamp(22px, 2.6vw, 28px); margin: 48px 0 0; }
+.doc p, .doc li { color: var(--mist-bright); }
+.doc li { margin-bottom: 10px; }
+.doc a { color: var(--paper); }
+.doc code {
+  font-family: var(--mono);
+  font-size: .88em;
+  background: rgba(250, 250, 247, .08);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.doc .updated { font-family: var(--mono); font-size: 12px; color: var(--mist); letter-spacing: .06em; }
+
+:focus-visible { outline: 2px solid var(--mark); outline-offset: 3px; border-radius: 4px; }
+
+@media (max-width: 760px) {
+  .stage { grid-template-columns: 1fr; }
+  .arrow { transform: rotate(90deg); justify-self: center; }
+  .slip { transform: none; }
+  .top nav { gap: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .reveal, .slip span, .arrow { opacity: 1; transform: none; }
+  .hero h1 em::after { transform: scaleX(1); }
+}
