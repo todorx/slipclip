@@ -1,2 +1,4 @@
 .claude/settings.local.json
 *.xpi
+dist/
+web-ext-artifacts/
