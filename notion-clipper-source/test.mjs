@@ -4,6 +4,7 @@ import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./au
 import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
 import { buildMarkdown, optionLabel, parseChildDatabases, formatDuration } from "./popup.js";
 import { extractPage } from "./extract.js";
+import { canonicalUrl, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, readHighlights, writeHighlights } from "./highlights.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -199,6 +200,123 @@ const apiError = JSON.stringify({
 assert.equal(errorText(apiError), "Provided database_id 11111111-1111-4111-8111-111111111111 is a page, not a database.");
 assert.equal(errorText("plain text failure"), "plain text failure", "unparseable errors pass through");
 assert.ok(/not a (page|database)/i.test(errorText(apiError)), "clip's retry trigger must match this wording");
+
+// --- highlights ---
+
+// Tracking parameters and fragments differ per share link for one article.
+assert.equal(
+  canonicalUrl("https://www.Example.com/Post/?utm_source=x&utm_medium=y#top"),
+  canonicalUrl("https://example.com/Post"),
+  "fragments, www and tracking params are not part of a page's identity"
+);
+assert.equal(canonicalUrl("https://example.com/a?page=2"), "https://example.com/a?page=2", "a meaningful query parameter survives");
+assert.equal(canonicalUrl("not a url"), "not a url", "unparseable input is passed through");
+
+// A passage saved twice is one highlight; the same passage in two articles is two.
+const articleA = "https://example.com/a";
+const articleB = "https://example.com/b";
+let library = [];
+library = addHighlight(library, { text: "One sentence.", url: articleA, title: "A" }).list;
+library = addHighlight(library, { text: "One sentence.", url: articleA + "?utm_source=t", title: "A" }).list;
+assert.equal(library.length, 1, "the same passage from a tracking-parameter URL is a duplicate");
+
+library = addHighlight(library, { text: "Another sentence.", url: articleA, title: "A" }).list;
+assert.equal(library.length, 2, "a different passage from the same page is not");
+
+library = addHighlight(library, { text: "One sentence.", url: articleB, title: "B" }).list;
+assert.equal(library.length, 3, "the same passage from another page is not");
+
+const dupe = addHighlight(library, { text: "One sentence.", url: articleA, title: "A" });
+assert.equal(dupe.added, false, "a duplicate reports itself");
+assert.equal(dupe.list.length, 3, "and does not grow the store");
+
+// Notion rejects a rich-text value over 2000 characters.
+const long = addHighlight([], { text: "x".repeat(2500), url: articleA, title: "A" }).list[0];
+assert.equal(long.text.length, 2000, "text is capped at the API limit");
+assert.equal(long.truncated, true, "and says so");
+assert.equal(addHighlight([], { text: "short", url: articleA, title: "A" }).list[0].truncated, false);
+
+assert.equal(pending(library).length, 3, "everything starts unsynced");
+assert.equal(pending([{ synced: 1 }, { synced: null }]).length, 1, "synced highlights are done");
+
+const grouped = groupBySource([
+  { canonical: articleA, key: "1" }, { canonical: articleB, key: "2" }, { canonical: articleA, key: "3" }
+]);
+assert.equal(grouped.size, 2, "one group per source");
+assert.equal(grouped.get(articleA).length, 2);
+
+// A property called URL collides with a reserved name and must be prefixed.
+const mapping = {
+  text: { name: "Highlight", type: "title" },
+  url: { name: "URL", type: "url" },
+  created: { name: "Highlighted", type: "date" },
+  title: { name: "Source", type: "rich_text" },
+  note: { name: "Note", type: "rich_text" }
+};
+const props = applyMapping(
+  { text: "A passage.", url: "https://example.com/a", title: "An Article", note: "", created: Date.UTC(2026, 8, 21) },
+  mapping
+);
+assert.equal(props["userDefined:URL"], "https://example.com/a", "a url-named property is prefixed");
+assert.equal(props.Highlight, "A passage.", "the title property name is whatever the mapping says");
+assert.equal(props.Source, "An Article");
+assert.ok(!("Note" in props), "an empty note is omitted, not written as an empty string");
+assert.equal(props["date:Highlighted:start"], "2026-09-21", "the date is split into start");
+assert.equal(props["date:Highlighted:is_datetime"], 0, "and declares itself a date, not a datetime");
+
+assert.deepEqual(
+  applyMapping({ text: "x", url: "u", created: Date.UTC(2026, 8, 21) }, { url: { name: "Link", type: "url" } }),
+  { Link: "u" },
+  "unmapped fields are omitted entirely"
+);
+
+// The schema and the data source id come back as markup from notion-fetch.
+const dbPayload = JSON.stringify({
+  text: '<database url="https://app.notion.com/p/33333333-3333-4333-8333-333333333333">\n'
+    + '<data-source url="collection://55555555-5555-4555-8555-555555555555">\n'
+    + 'CREATE TABLE (\n'
+    + '  "Highlight" TITLE,\n'
+    + '  "Source" RICH_TEXT,\n'
+    + '  "Author" RICH_TEXT,\n'
+    + '  "Site" RICH_TEXT,\n'
+    + '  "URL" URL,\n'
+    + '  "Highlighted" DATE,\n'
+    + '  "Note" RICH_TEXT\n'
+    + ')'
+});
+assert.equal(parseDataSourceId(dbPayload), "55555555-5555-4555-8555-555555555555", "the collection id, not the page id");
+assert.equal(parseDataSourceId("no collection here"), null);
+
+const schema = parseProperties(dbPayload);
+assert.equal(schema.length, 7, "every column is read");
+assert.deepEqual(schema[0], { name: "Highlight", type: "TITLE" });
+assert.ok(schema.some((p) => p.name === "URL" && p.type === "URL"));
+
+const matched = matchProperties(schema);
+assert.equal(matched.text.name, "Highlight", "the title property takes the passage");
+assert.equal(matched.url.name, "URL", "the url-typed property takes the link");
+assert.equal(matched.created.name, "Highlighted", "the date-typed property takes the date");
+assert.equal(matched.title.name, "Source", "Source is not confused with the title property");
+assert.equal(matched.author.name, "Author");
+assert.equal(matched.site.name, "Site");
+assert.equal(matched.note.name, "Note");
+
+// A stock database whose title property is just "Name" still maps.
+const plain = matchProperties(parseProperties(JSON.stringify({ text: 'CREATE TABLE ("Name" TITLE)' })));
+assert.equal(plain.text.name, "Name", "an unrecognised title property is still the passage target");
+
+// Storage round-trip. readHighlights must survive junk in the slot.
+const hStore = {};
+globalThis.browser = { storage: { local: {
+  get: async (k) => ({ [k]: hStore[k] }),
+  set: async (o) => Object.assign(hStore, o)
+} } };
+assert.deepEqual(await readHighlights(), [], "an empty store reads as an empty list");
+await writeHighlights([{ key: "a" }]);
+assert.deepEqual(await readHighlights(), [{ key: "a" }], "what was written comes back");
+hStore.highlights = "nonsense";
+assert.deepEqual(await readHighlights(), [], "junk in the slot is not a crash");
+delete globalThis.browser;
 
 // extractPage() runs inside the page and is serialized by executeScript, so it
 // stays self-contained - which is also why plain Node cannot run it without a
