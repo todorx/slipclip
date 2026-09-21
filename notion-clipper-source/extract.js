@@ -87,12 +87,48 @@ export function extractPage() {
   try {
     const parsed = new Readability(document.cloneNode(true), { charThreshold: 200 }).parse();
     if (parsed?.content) {
-      const markdown = new TurndownService({
+      const service = new TurndownService({
         headingStyle: "atx",
         codeBlockStyle: "fenced",
         bulletListMarker: "-",
         hr: "---"
-      }).turndown(parsed.content);
+      });
+
+      // Tables, strikethrough and task lists are GitHub extensions. Core
+      // turndown has none of them, so a <table> arrives as a run of
+      // unreadable text.
+      // ponytail: the plugin keeps a headerless table as raw HTML instead of
+      // inventing a header. Data tables carry <th>, so this is rare - revisit
+      // if a real clip ever shows raw markup in Notion.
+      turndownPluginGfm.gfm(service);
+
+      // Most sites park the real image in a data-* attribute and serve a
+      // placeholder in src, which the built-in rule reads blindly - so a lazy
+      // image arrives broken or not at all. Added after gfm so it wins.
+      service.addRule("lazyImage", {
+        filter: "img",
+        replacement: (content, node) => {
+          const at = (name) => (node.getAttribute(name) || "").trim();
+          // "url-a 1x, url-b 2x" - the last candidate is the largest.
+          const widest = (set) => set.split(",").pop().trim().split(/\s+/)[0];
+          const src = at("data-src") || at("data-original") || at("data-lazy-src")
+            || widest(at("srcset")) || widest(at("data-srcset")) || at("src");
+
+          // A data: URI is a placeholder or a tracking pixel, and Notion
+          // cannot render one.
+          if (!src || src.startsWith("data:")) return "";
+
+          // An unparseable src is not worth losing the whole article over.
+          let url;
+          try { url = new URL(src, location.href).href; } catch { return ""; }
+
+          const alt = at("alt").replace(/([\[\]])/g, "\\$1");
+          const title = at("title").replace(/\s+/g, " ");
+          return `![${alt}](${url}${title ? ` "${title}"` : ""})`;
+        }
+      });
+
+      const markdown = service.turndown(parsed.content);
 
       const LIMIT = 60000;
       page.truncated = markdown.length > LIMIT;

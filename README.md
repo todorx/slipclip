@@ -53,7 +53,7 @@ A text selection outranks everything: highlight something and the clip is that q
 - Auth talks to Notion's hosted MCP server (`https://mcp.notion.com`) with dynamic client registration (RFC 7591, `token_endpoint_auth_method: "none"`) — designed for public clients. Each install registers as its own OAuth client. Notion's REST OAuth is intentionally avoided: it needs a `client_secret` a public extension cannot hold.
 - Sign-in runs in the background page (`auth.js`), not the popup — Firefox destroys popups when focus moves to the auth window, killing the exchange mid-flight.
 - Pages are created with the `notion-create-pages` MCP tool (Markdown in, no block JSON).
-- Extraction is [@mozilla/readability](https://github.com/mozilla/readability) 0.6.0 + [turndown](https://github.com/mixmark-io/turndown) 7.2.0, vendored unmodified in `vendor/`. A page counts as an index when Readability finds under 600 characters of prose (link text excluded).
+- Extraction is [@mozilla/readability](https://github.com/mozilla/readability) 0.6.0 + [turndown](https://github.com/mixmark-io/turndown) 7.2.0 + [turndown-plugin-gfm](https://github.com/mixmark-io/turndown-plugin-gfm) 1.0.2, vendored unmodified in `vendor/`. A page counts as an index when Readability finds under 600 characters of prose (link text excluded).
 
 See [notion-clipper-source/README.md](notion-clipper-source/README.md) for the full technical notes.
 

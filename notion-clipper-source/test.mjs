@@ -1,7 +1,9 @@
 // node test.mjs   (Node 18+, no deps)
 import assert from "node:assert/strict";
-import { pkceChallenge } from "./auth.js";
-import { normalizeId, buildMarkdown, parseResults, optionLabel, errorText, parseChildDatabases, formatDuration } from "./popup.js";
+import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./auth.js";
+import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
+import { buildMarkdown, optionLabel, parseChildDatabases, formatDuration } from "./popup.js";
+import { extractPage } from "./extract.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -9,6 +11,46 @@ assert.equal(
   "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
   "PKCE S256 challenge must match RFC 7636"
 );
+
+// Firefox for Android ships no identity API, so sign-in falls back to the
+// hosted callback. The client is registered against whichever redirect this
+// environment uses - Notion rejects any other one.
+assert.equal(hasWebAuthFlow(), false, "Node has no identity API");
+assert.equal(redirectUri(), "https://slipclip.todorx.dev/oauth-callback/", "no identity picks the hosted callback");
+globalThis.browser = { identity: { launchWebAuthFlow() {}, getRedirectURL: () => "https://abc123.extensions.allizom.org/" } };
+assert.equal(redirectUri(), "https://abc123.extensions.allizom.org/", "identity present keeps the extension redirect");
+delete globalThis.browser;
+
+// The Android flow is resumed from storage by a tabs.onUpdated event, so the
+// guard deciding "is this my redirect?" is what keeps it from firing on
+// unrelated tabs - and from exchanging a code the state check rejects.
+const store = {
+  auth_pending: {
+    tab_id: 7,
+    client_id: "client-1",
+    verifier: "verifier-1",
+    state: "state-1",
+    redirect_uri: "https://slipclip.todorx.dev/oauth-callback/"
+  }
+};
+globalThis.browser = {
+  storage: { local: {
+    get: async (k) => ({ [k]: store[k] }),
+    set: async (o) => Object.assign(store, o),
+    remove: async (k) => { delete store[k]; }
+  } },
+  tabs: { remove: async () => {} }
+};
+
+assert.equal(await completeSignIn(9, "https://slipclip.todorx.dev/oauth-callback/?code=x&state=state-1"), false, "another tab's redirect is ignored");
+assert.equal(await completeSignIn(7, "https://example.com/"), false, "another url is ignored");
+assert.equal(store.auth_pending.tab_id, 7, "an ignored update leaves the flow parked");
+assert.match(store.auth_error || "", /^$/, "and records no error");
+
+assert.equal(await completeSignIn(7, "https://slipclip.todorx.dev/oauth-callback/?code=x&state=wrong"), true, "our redirect is claimed");
+assert.match(store.auth_error, /State mismatch/, "a mismatched state aborts before any exchange");
+assert.ok(!store.auth_pending, "the parked flow is cleared either way");
+delete globalThis.browser;
 
 assert.equal(
   normalizeId("https://www.notion.so/Some-Page-0123456789abcdef0123456789abcdef"),
@@ -129,6 +171,11 @@ assert.equal(kids[1].id, "44444444-4444-4444-8444-444444444444");
 assert.ok(kids.every((k) => k.type === "database"));
 assert.deepEqual(parseChildDatabases("a page with no databases"), [], "pages without databases yield nothing");
 
+// MCP results arrive either as markup already or wrapped in a JSON blob.
+assert.equal(unwrapPayload(JSON.stringify({ text: "<p>x</p>" })), "<p>x</p>", "JSON-wrapped markup unwraps");
+assert.equal(unwrapPayload("<p>x</p>"), "<p>x</p>", "bare markup passes through");
+assert.equal(unwrapPayload(""), "", "an empty payload is not a crash");
+
 // Bare markup, no JSON wrapper.
 assert.equal(
   parseChildDatabases('<database url="https://app.notion.com/p/33333333333343338333333333333333">Log</database>')[0].id,
@@ -152,5 +199,84 @@ const apiError = JSON.stringify({
 assert.equal(errorText(apiError), "Provided database_id 11111111-1111-4111-8111-111111111111 is a page, not a database.");
 assert.equal(errorText("plain text failure"), "plain text failure", "unparseable errors pass through");
 assert.ok(/not a (page|database)/i.test(errorText(apiError)), "clip's retry trigger must match this wording");
+
+// extractPage() runs inside the page and is serialized by executeScript, so it
+// stays self-contained - which is also why plain Node cannot run it without a
+// DOM. The fakes below are the smallest page that reaches the turndown rules:
+// no metadata anywhere, and a Readability handing back one paragraph. The rules
+// are then exercised against fake image nodes, so these assertions run against
+// the real extractPage(), not a copy of it.
+let fakeService;
+let gfmApplied = false;
+
+class FakeTurndown {
+  constructor() { fakeService = this; this.rules = {}; }
+  addRule(key, rule) { this.rules[key] = rule; return this; }
+  // Long enough that the index-page fallback stays out of the way.
+  turndown() { return "x".repeat(700); }
+}
+
+globalThis.document = {
+  title: "Fake",
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  cloneNode: () => globalThis.document
+};
+globalThis.location = { href: "https://example.com/post" };
+globalThis.getSelection = () => null;
+globalThis.Readability = class { parse() { return { content: "<p>body</p>" }; } };
+globalThis.TurndownService = FakeTurndown;
+globalThis.turndownPluginGfm = { gfm: () => { gfmApplied = true; } };
+
+const scraped = extractPage();
+
+assert.ok(gfmApplied, "the GFM extensions are applied to the converter");
+assert.ok(scraped.body.length >= 600, "the converted body survives the index-page check");
+
+const img = (attrs) => ({ getAttribute: (name) => attrs[name] ?? null });
+const image = fakeService.rules.lazyImage;
+assert.ok(image, "extractPage registers a lazy-image rule");
+
+assert.equal(
+  image.replacement("", img({ src: "https://cdn.example.com/real.png" })),
+  "![](https://cdn.example.com/real.png)"
+);
+assert.equal(
+  image.replacement("", img({ src: "data:image/gif;base64,R0lGOD", "data-src": "https://cdn.example.com/real.png" })),
+  "![](https://cdn.example.com/real.png)",
+  "a placeholder src yields to data-src"
+);
+assert.equal(
+  image.replacement("", img({ src: "https://cdn.example.com/tiny.gif", srcset: "https://cdn.example.com/s.jpg 1x, https://cdn.example.com/l.jpg 2x" })),
+  "![](https://cdn.example.com/l.jpg)",
+  "the last srcset candidate is the largest"
+);
+assert.equal(
+  image.replacement("", img({ src: "data:image/gif;base64,R0lGOD" })),
+  "",
+  "a bare data: placeholder is dropped rather than linked"
+);
+assert.equal(
+  image.replacement("", img({ "data-src": "/rel/pic.png" })),
+  "![](https://example.com/rel/pic.png)",
+  "relative URLs are absolutized against the page"
+);
+assert.equal(
+  image.replacement("", img({ alt: "a[b] c", src: "https://cdn.example.com/x.png" })),
+  "![a\\[b\\] c](https://cdn.example.com/x.png)",
+  "brackets in alt are escaped"
+);
+assert.equal(
+  image.replacement("", img({ src: "http://[bad" })),
+  "",
+  "an unparseable src drops the image, not the article"
+);
+
+delete globalThis.document;
+delete globalThis.location;
+delete globalThis.getSelection;
+delete globalThis.Readability;
+delete globalThis.TurndownService;
+delete globalThis.turndownPluginGfm;
 
 console.log("ok");

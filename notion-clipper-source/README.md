@@ -29,7 +29,11 @@ A page counts as an index when Readability finds under 600 characters of prose â
 
 A text selection outranks all of it: highlight something and the clip is that quote alone. Article bodies are capped at 60,000 characters and marked when truncated.
 
-Extraction is [`@mozilla/readability`](https://github.com/mozilla/readability) (Apache-2.0) plus [turndown](https://github.com/mixmark-io/turndown) (MIT), vendored in `vendor/` and injected into the page alongside `extract.js`. Both are unmodified release builds. Their licenses are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Tables, strikethrough and task lists arrive as real Markdown, and images resolve through the lazy-loading `data-*` attributes most sites hide them in rather than the placeholder left in `src`.
+
+Extraction is [`@mozilla/readability`](https://github.com/mozilla/readability) (Apache-2.0), [turndown](https://github.com/mixmark-io/turndown) (MIT), and [turndown-plugin-gfm](https://github.com/mixmark-io/turndown-plugin-gfm) (MIT, for tables, strikethrough and task lists â€” core turndown has none of them), vendored in `vendor/` and injected into the page alongside `extract.js`. All three are unmodified release builds.
+
+A `lazyImage` rule sits on top of the converter: most sites keep the real image in a `data-*` attribute and serve a placeholder in `src`, which the built-in rule reads blindly. Their licenses are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Setup
 
