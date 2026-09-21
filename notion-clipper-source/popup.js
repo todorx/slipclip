@@ -1,5 +1,8 @@
 import { extractPage } from "./extract.js";
 
+if (typeof globalThis.browser === "undefined" && typeof globalThis.chrome !== "undefined")
+  globalThis.browser = globalThis.chrome;
+
 const $ = (id) => document.getElementById(id);
 const MCP = "https://mcp.notion.com";
 const PROTOCOL_VERSION = "2025-06-18";
@@ -252,7 +255,7 @@ async function getTabData() {
   } catch { injected = []; }
 
   const data = injected?.[0]?.result;
-  if (!data) throw new Error("Can't read this page. Firefox blocks extensions on browser pages such as about:debugging - switch to a normal web page and clip that.");
+  if (!data) throw new Error("Can't read this page. Browsers block extensions on browser pages such as about:debugging or chrome://extensions - switch to a normal web page and clip that.");
   return data;
 }
 

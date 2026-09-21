@@ -4,6 +4,22 @@
 
 const MCP = "https://mcp.notion.com";
 
+if (typeof globalThis.browser === "undefined" && typeof globalThis.chrome !== "undefined")
+  globalThis.browser = globalThis.chrome;
+
+// Single call: Firefox returns a promise (callback ignored), Chrome
+// returns undefined and invokes the callback. Promise ignores the loser.
+function webAuthFlow(url) {
+  return new Promise((resolve, reject) => {
+    const maybe = browser.identity.launchWebAuthFlow({ url, interactive: true }, (redirect) => {
+      if (browser.runtime.lastError || !redirect)
+        reject(new Error(browser.runtime.lastError?.message || "Sign-in closed."));
+      else resolve(redirect);
+    });
+    maybe?.then?.(resolve, reject);
+  });
+}
+
 export const b64url = (buf) =>
   btoa(String.fromCharCode(...new Uint8Array(buf)))
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -65,7 +81,7 @@ export async function signIn() {
     code_challenge_method: "S256"
   });
 
-  const redirect = await browser.identity.launchWebAuthFlow({ url, interactive: true });
+  const redirect = await webAuthFlow(url);
   const q = new URL(redirect).searchParams;
   if (q.get("state") !== state) throw new Error("State mismatch - sign-in aborted.");
   if (q.get("error")) throw new Error(q.get("error_description") || q.get("error"));

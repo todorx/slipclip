@@ -1,15 +1,12 @@
 import { signIn, signOut, accessToken } from "./auth.js";
 
-// Notion's MCP server implements the spec's DNS-rebinding guard and rejects
-// any browser origin ("Invalid Origin: <extension uuid>"). Desktop MCP clients
-// send no Origin at all, so strip ours - scoped to this one host.
-browser.webRequest.onBeforeSendHeaders.addListener(
-  ({ requestHeaders }) => ({
-    requestHeaders: requestHeaders.filter((h) => h.name.toLowerCase() !== "origin")
-  }),
-  { urls: ["https://mcp.notion.com/*"] },
-  ["blocking", "requestHeaders"]
-);
+if (typeof globalThis.browser === "undefined" && typeof globalThis.chrome !== "undefined")
+  globalThis.browser = globalThis.chrome;
+
+// Origin strip lives in rules.json (DNR modifyHeaders) - webRequestBlocking
+// is unavailable in Chrome MV3, so no listener here. Service workers are
+// non-persistent: `pending` dedups within one lifetime only; the sign-in
+// outcome persists via storage.local either way.
 
 // The popup that sent this message is gone by the time the flow finishes, so
 // the outcome goes to storage: the next popup open reads it.
