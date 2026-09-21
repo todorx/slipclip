@@ -92,16 +92,16 @@ assert.ok(!/\n\n\n/.test(bare), "no stacked blank lines from skipped sections");
 
 // Real payloads: notion-list-recent-pages has no `id`, notion-search does.
 const recent = parseResults(JSON.stringify({
-  results: [{ type: "page", url: "https://app.notion.com/p/3d2542df8f348182a95ff06c99897f3f?pvs=204", title: "Level Up" }],
+  results: [{ type: "page", url: "https://app.notion.com/p/11111111111141118111111111111111?pvs=204", title: "Example Page" }],
   nextCursor: "offset:4"
 }));
-assert.deepEqual(recent, [{ id: "3d2542df-8f34-8182-a95f-f06c99897f3f", title: "Level Up", type: "page" }]);
+assert.deepEqual(recent, [{ id: "11111111-1111-4111-8111-111111111111", title: "Example Page", type: "page" }]);
 
 const searched = parseResults(JSON.stringify({
-  results: [{ id: "3c5542df-8f34-81e1-b5bd-c1051adb8e6f", title: "FINKI Life", url: "https://app.notion.com/p/x", type: "page" }],
+  results: [{ id: "22222222-2222-4222-8222-222222222222", title: "Example Search Result", url: "https://app.notion.com/p/x", type: "page" }],
   type: "workspace_search"
 }));
-assert.equal(searched[0].id, "3c5542df-8f34-81e1-b5bd-c1051adb8e6f", "search results keep their own id");
+assert.equal(searched[0].id, "22222222-2222-4222-8222-222222222222", "search results keep their own id");
 
 assert.deepEqual(parseResults(""), [], "empty response is not a crash");
 assert.deepEqual(parseResults(JSON.stringify({ results: [{ title: "No id anywhere" }] })), [], "unusable rows are dropped");
@@ -115,29 +115,29 @@ assert.ok(optionLabel({ title: "x".repeat(80), type: "page" }).length <= 48, "lo
 // carries data-source-url=, which must NOT be mistaken for the database id.
 const fetched = JSON.stringify({
   metadata: { type: "page" },
-  text: '<page url="https://app.notion.com/p/3d2542df8f348182a95ff06c99897f3f">\n<content>\n'
-    + '<database url="https://app.notion.com/p/00f53eb87f084f3e82dadb177b3755e2" inline="true" data-source-url="collection://496a0caf-4816-4da9-8202-dd6dfd7a2dd3">Дневен Лог — XP Контролер</database>\n'
-    + '<database url="https://app.notion.com/p/9cd5d6612e2e4e35b422caf1c98bde39" inline="true" data-source-url="collection://e9eef72d-5576-4ba2-a729-60b57557611d">Неделен Преглед — Сејв Поинт</database>\n'
+  text: '<page url="https://app.notion.com/p/11111111111141118111111111111111">\n<content>\n'
+    + '<database url="https://app.notion.com/p/33333333333343338333333333333333" inline="true" data-source-url="collection://55555555-5555-4555-8555-555555555555">Example Database A</database>\n'
+    + '<database url="https://app.notion.com/p/44444444444444448444444444444444" inline="true" data-source-url="collection://66666666-6666-4666-8666-666666666666">Example Database B</database>\n'
     + '</content>\n</page>'
 });
 
 const kids = parseChildDatabases(fetched);
 assert.equal(kids.length, 2, "both inline databases found");
-assert.equal(kids[0].id, "00f53eb8-7f08-4f3e-82da-db177b3755e2", "database id, not the collection:// data source");
-assert.equal(kids[0].title, "Дневен Лог — XP Контролер");
-assert.equal(kids[1].id, "9cd5d661-2e2e-4e35-b422-caf1c98bde39");
+assert.equal(kids[0].id, "33333333-3333-4333-8333-333333333333", "database id, not the collection:// data source");
+assert.equal(kids[0].title, "Example Database A");
+assert.equal(kids[1].id, "44444444-4444-4444-8444-444444444444");
 assert.ok(kids.every((k) => k.type === "database"));
 assert.deepEqual(parseChildDatabases("a page with no databases"), [], "pages without databases yield nothing");
 
 // Bare markup, no JSON wrapper.
 assert.equal(
-  parseChildDatabases('<database url="https://app.notion.com/p/00f53eb87f084f3e82dadb177b3755e2">Log</database>')[0].id,
-  "00f53eb8-7f08-4f3e-82da-db177b3755e2"
+  parseChildDatabases('<database url="https://app.notion.com/p/33333333333343338333333333333333">Log</database>')[0].id,
+  "33333333-3333-4333-8333-333333333333"
 );
 
 // Markup nested somewhere other than `text`.
 assert.equal(
-  parseChildDatabases(JSON.stringify({ blocks: { body: '<database url="https://app.notion.com/p/00f53eb87f084f3e82dadb177b3755e2">Log</database>' } }))[0].title,
+  parseChildDatabases(JSON.stringify({ blocks: { body: '<database url="https://app.notion.com/p/33333333333343338333333333333333">Log</database>' } }))[0].title,
   "Log"
 );
 
@@ -146,10 +146,10 @@ const apiError = JSON.stringify({
   name: "APIResponseError",
   code: "validation_error",
   body: "{\"object\":\"error\",\"status\":400}",
-  request_id: "9f8beda5-6ee2-4ceb-b2f7-1dbe68761900",
-  message: "Provided database_id 3d2542df-8f34-8182-a95f-f06c99897f3f is a page, not a database."
+  request_id: "77777777-7777-4777-8777-777777777777",
+  message: "Provided database_id 11111111-1111-4111-8111-111111111111 is a page, not a database."
 });
-assert.equal(errorText(apiError), "Provided database_id 3d2542df-8f34-8182-a95f-f06c99897f3f is a page, not a database.");
+assert.equal(errorText(apiError), "Provided database_id 11111111-1111-4111-8111-111111111111 is a page, not a database.");
 assert.equal(errorText("plain text failure"), "plain text failure", "unparseable errors pass through");
 assert.ok(/not a (page|database)/i.test(errorText(apiError)), "clip's retry trigger must match this wording");
 

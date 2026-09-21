@@ -2,3 +2,5 @@
 *.xpi
 dist/
 web-ext-artifacts/
+desktop.ini
+Thumbs.db

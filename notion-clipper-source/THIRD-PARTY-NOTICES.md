@@ -6,11 +6,19 @@ extension is MIT, see `LICENSE` in the repository root.
 
 ## @mozilla/readability 0.6.0 — `vendor/Readability.js`
 
-Apache License 2.0. Copyright (c) 2010 Arc90 Inc.
-https://github.com/mozilla/readability
+Apache License 2.0. https://github.com/mozilla/readability
 
 A full copy of the license is in `vendor/LICENSE-Apache-2.0.txt`. The file itself
 carries the same notice in its header and is distributed unchanged.
+
+Section 4(d) of the license requires the upstream NOTICE file to travel with any
+distribution, so it is reproduced here verbatim:
+
+```
+Readability
+Copyright (c) 2010 Arc90 Inc
+Copyright (c) 2010-2026 Mozilla and Contributors
+```
 
 ## turndown 7.2.0 — `vendor/turndown.js`
 
