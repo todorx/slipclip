@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
   color-scheme: light dark;
@@ -30,6 +31,7 @@
 
 body {
   width: 340px;
+  max-width: 100vw;
   margin: 0;
   padding: 14px;
   background: var(--paper);
@@ -167,6 +169,77 @@ select:disabled { opacity: .45; }
   border-top: 1px solid var(--edge);
 }
 
+/* Two panes, so the clip flow keeps the whole popup when it is the one you want. */
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+
+.tab {
+  flex: 1;
+  padding: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] { color: var(--ink); border-color: var(--ink); }
+
+.hitem {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--edge);
+  font-size: 12px;
+}
+
+.hitem q { display: block; margin-bottom: 4px; }
+
+.hitem cite {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hitem button {
+  margin-top: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hgroup {
+  margin: 12px 0 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hgroup:first-child { margin-top: 0; }
+
+#hlist { max-height: 320px; overflow-y: auto; }
+
+#sync {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--ink);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+#sync:disabled { opacity: .35; cursor: not-allowed; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
@@ -178,6 +251,13 @@ select:disabled { opacity: .45; }
   <span id="state">Not connected</span>
   <button id="connect">Connect Notion</button>
 </div>
+
+<nav class="tabs">
+  <button id="tab-clip" class="tab" aria-selected="true">Clip</button>
+  <button id="tab-highlights" class="tab" aria-selected="false">Highlights <span id="hcount"></span></button>
+</nav>
+
+<div id="clip-pane">
 
 <label>
   <span class="lab">Search</span>
@@ -211,6 +291,12 @@ select:disabled { opacity: .45; }
 <div id="status"></div>
 
 <p class="note">Clips reach only the pages you shared on Notion's consent screen.</p>
+</div>
+
+<div id="highlights-pane" hidden>
+  <div id="hlist"></div>
+  <button id="sync" disabled>Nothing to sync</button>
+</div>
 
 <script type="module" src="popup.js"></script>
 </body>

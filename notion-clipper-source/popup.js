@@ -1,6 +1,7 @@
 import { extractPage } from "./extract.js";
 
 import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
+import { groupBySource, pending, readHighlights, writeHighlights, applyMapping } from "./highlights.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -200,6 +201,81 @@ async function clip() {
   }
 }
 
+// ---------- highlights ----------
+
+function showTab(which) {
+  $("clip-pane").hidden = which !== "clip";
+  $("highlights-pane").hidden = which !== "highlights";
+  $("tab-clip").setAttribute("aria-selected", String(which === "clip"));
+  $("tab-highlights").setAttribute("aria-selected", String(which === "highlights"));
+}
+
+function renderHighlights(list) {
+  $("hcount").textContent = list.length ? `(${list.length})` : "";
+  const box = $("hlist");
+  box.replaceChildren();
+  if (!list.length) {
+    box.textContent = "No highlights yet. Select some text and press Alt+Shift+H.";
+    return;
+  }
+
+  // The list is newest-first and groupBySource keeps insertion order, so the
+  // source you just saved into is always the first group and each group reads
+  // newest-first too.
+  for (const [canonical, items] of groupBySource(list)) {
+    const head = document.createElement("div");
+    head.className = "hgroup";
+    head.textContent = items[0].title || items[0].site || canonical;
+    box.append(head);
+
+    for (const h of items) {
+      const row = document.createElement("div");
+      row.className = "hitem";
+
+      const quote = document.createElement("q");
+      quote.textContent = h.truncated ? h.text + "…" : h.text;
+
+      const source = document.createElement("cite");
+      source.textContent = h.synced ? "synced" : "waiting";
+
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.addEventListener("click", async () => {
+        await writeHighlights((await readHighlights()).filter((x) => x.key !== h.key));
+        renderHighlights(await readHighlights());
+      });
+
+      row.append(quote, source, del);
+      box.append(row);
+    }
+  }
+}
+
+// One call per flush, one row per highlight, only the unsynced ones.
+async function flushHighlights() {
+  const { destinations } = await browser.storage.local.get("destinations");
+  const dest = destinations?.highlights;
+  if (!dest?.dataSourceId) throw new Error("No highlights destination set. Open Settings.");
+
+  const list = await readHighlights();
+  const todo = pending(list);
+  if (!todo.length) return 0;
+
+  await mcpTool("notion-create-pages", {
+    parent: { data_source_id: dest.dataSourceId },
+    pages: todo.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
+  });
+
+  // Only now is it safe to call them done: a popup killed mid-call leaves the
+  // queue untouched and the next flush retries the whole batch.
+  // ponytail: a truthy marker, not the page id - nothing reads the id, and
+  // depending on the response shape would make marking silently fragile.
+  const done = new Set(todo.map((h) => h.key));
+  const stamped = Date.now();
+  await writeHighlights(list.map((h) => (done.has(h.key) ? { ...h, synced: stamped } : h)));
+  return todo.length;
+}
+
 // ---------- UI ----------
 
 // You cannot append blocks to a database, so that choice disappears when the
@@ -267,13 +343,46 @@ if (typeof browser !== "undefined") {
     catch (e) { say("Error: " + e.message, "error"); }
   });
 
+  $("tab-clip").addEventListener("click", () => showTab("clip"));
+  $("tab-highlights").addEventListener("click", () => showTab("highlights"));
+
   (async () => {
     const s = await browser.storage.local.get(["parent", "parentType"]);
     if (s.parent) $("parent").value = s.parent;
     if (s.parentType) $("parent").dataset.type = s.parentType;
     syncMode();
     await paint();
+
     const { access_token } = await browser.storage.local.get("access_token");
+
+    const refresh = async () => {
+      const list = await readHighlights();
+      renderHighlights(list);
+      const waiting = pending(list).length;
+      $("sync").disabled = !waiting;
+      $("sync").textContent = waiting ? `Sync ${waiting} to Notion` : "Nothing to sync";
+    };
+
+    // The popup is the app's only surface, so the queue drains here - whichever
+    // tab you happened to land on. A failure leaves it queued for a retry.
+    const flushNow = async () => {
+      try {
+        const n = await flushHighlights();
+        if (n) say(`Synced ${n} highlight${n === 1 ? "" : "s"}.`);
+      } catch (e) {
+        say("Highlights: " + e.message, "error");
+      }
+      await refresh();
+    };
+
+    $("sync").addEventListener("click", () => {
+      say("Syncing...");
+      return flushNow();
+    });
+
+    if (access_token) await flushNow();
+    else await refresh();
+
     if (!access_token) return;
     await loadPicker("");
 
