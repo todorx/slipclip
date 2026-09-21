@@ -60,7 +60,11 @@ function renderMapping(mapping) {
     const sel = document.createElement("select");
     sel.dataset.field = field;
     sel.append(new Option("not saved", ""));
-    for (const p of schema) sel.append(new Option(`${p.name} (${p.type.toLowerCase()})`, p.name));
+    for (const p of schema) {
+      // The passage has to be the title column, so offer nothing else for it.
+      if (field === "text" && p.type !== "TITLE") continue;
+      sel.append(new Option(`${p.name} (${p.type.toLowerCase()})`, p.name));
+    }
     sel.value = mapping[field]?.name || "";
 
     row.append(name, sel);
@@ -104,7 +108,9 @@ async function useDatabase(id) {
 
 async function saveMapping() {
   const mapping = chosenMapping();
-  if (!mapping.text) return say("Pick which column should hold the passage text.", "error");
+  // Notion requires a title on every row, so a passage mapped anywhere else
+  // would be refused at flush time - catch it while the user is looking at it.
+  if (mapping.text?.type !== "TITLE") return say("The passage has to go in the database's title column.", "error");
   await store({ ...current, mapping });
   showSaved(schema.find((p) => p.name === mapping.text.name)?.name);
   say("");
@@ -126,6 +132,9 @@ async function createDatabase() {
   const dataSourceId = parseDataSourceId(raw);
   if (!dataSourceId) throw new Error("Notion did not say where the new database lives.");
   schema = parseProperties(raw);
+  if (!schema.length) {
+    throw new Error("Notion created the database but did not report its columns. Open it once in Notion, then pick it from the list.");
+  }
   current = { dataSourceId };
   await store({ ...current, mapping: matchProperties(schema) });
   renderMapping(matchProperties(schema));
@@ -135,7 +144,17 @@ async function createDatabase() {
 
 $("q").addEventListener("input", () => {
   clearTimeout($("q")._timer);
-  $("q")._timer = setTimeout(() => loadList($("q").value.trim()), 350);
+  const typed = $("q").value.trim();
+
+  // Search only ever sees what was shared with the connection, so a pasted link
+  // or id goes straight in rather than being searched for - otherwise a
+  // database the connection cannot see is unreachable.
+  if (/^https?:\/\//i.test(typed) || /^[0-9a-f-]{32,36}$/i.test(typed)) {
+    const id = normalizeId(typed);
+    if (id) return void useDatabase(id).catch((e) => say("Error: " + e.message, "error"));
+  }
+
+  $("q")._timer = setTimeout(() => loadList(typed), 350);
 });
 
 $("picker").addEventListener("change", (e) => {

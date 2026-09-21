@@ -4,7 +4,7 @@ import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./au
 import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
 import { buildMarkdown, optionLabel, parseChildDatabases, formatDuration } from "./popup.js";
 import { extractPage } from "./extract.js";
-import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, readHighlights, writeHighlights } from "./highlights.js";
+import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, coalesce, flushPending, readHighlights, writeHighlights } from "./highlights.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -320,6 +320,78 @@ await writeHighlights([{ key: "a" }]);
 assert.deepEqual(await readHighlights(), [{ key: "a" }], "what was written comes back");
 hStore.highlights = "nonsense";
 assert.deepEqual(await readHighlights(), [], "junk in the slot is not a crash");
+delete globalThis.browser;
+
+// matchProperties does not guess. A rich_text column that is not named for a
+// field stays unmapped, because the form asks rather than invents.
+const vague = matchProperties(parseProperties(JSON.stringify({
+  text: 'CREATE TABLE ("Name" TITLE, "Created" DATE, "Extra" RICH_TEXT, "URL" URL)'
+})));
+assert.equal(vague.text.name, "Name");
+assert.ok(!vague.title, "an unnamed rich_text column is not taken for the source title");
+assert.ok(!vague.note, "nor for the note");
+
+// A one-line schema has to yield every column, not just the first.
+const inlineSchema = 'CREATE TABLE ("Highlight" TITLE, "URL" URL, "Highlighted" DATE, "Note" RICH_TEXT)';
+assert.equal(parseProperties(inlineSchema).length, 4, "a single-line schema yields every column");
+assert.equal(parseProperties(inlineSchema)[3].name, "Note");
+
+// coalesce: a second sync while one is in flight joins it rather than starting
+// a second write of the same queue.
+let runs = 0;
+const slow = coalesce(async () => {
+  runs++;
+  await new Promise((r) => setTimeout(r, 5));
+  return "done";
+});
+assert.deepEqual(await Promise.all([slow(), slow()]), ["done", "done"], "both callers get the result");
+assert.equal(runs, 1, "but the work happens once");
+await slow();
+assert.equal(runs, 2, "and once it settles, the next call runs again");
+
+// flushPending: the storage choreography, exercised without a network.
+const fStore = {};
+globalThis.browser = { storage: { local: {
+  get: async (k) => ({ [k]: fStore[k] }),
+  set: async (o) => Object.assign(fStore, o)
+} } };
+
+assert.equal(
+  await flushPending(async () => { throw new Error("must not be called"); }),
+  0,
+  "an empty queue makes no call at all"
+);
+
+fStore.highlights = [
+  { key: "a", text: "A", synced: null },
+  { key: "b", text: "B", synced: null }
+];
+const batches = [];
+await flushPending(async (batch) => {
+  batches.push(batch.map((h) => h.key));
+  // A capture lands while the request is in flight.
+  fStore.highlights = [{ key: "c", text: "C", synced: null }, ...fStore.highlights];
+});
+assert.deepEqual(batches, [["a", "b"]], "the pending highlights are sent");
+assert.deepEqual(fStore.highlights.map((h) => h.key), ["c", "a", "b"],
+  "a capture during the flush survives the stamp");
+assert.equal(fStore.highlights[0].synced, null, "and stays queued");
+assert.ok(fStore.highlights[1].synced && fStore.highlights[2].synced, "while what was sent is stamped");
+
+assert.equal(
+  await flushPending(async (batch) => { batches.push(batch.map((h) => h.key)); }),
+  1,
+  "the next flush sends only what is still pending"
+);
+assert.deepEqual(batches[1], ["c"]);
+
+// A long queue is chunked rather than sent as one unbounded call.
+fStore.highlights = Array.from({ length: 5 }, (_, i) => ({ key: `k${i}`, synced: null }));
+const sizes = [];
+await flushPending(async (batch) => { sizes.push(batch.length); }, { chunkSize: 2 });
+assert.deepEqual(sizes, [2, 2, 1], "a large queue is sent in chunks");
+assert.equal(pending(fStore.highlights).length, 0, "and all of it is stamped");
+
 delete globalThis.browser;
 
 // extractPage() runs inside the page and is serialized by executeScript, so it

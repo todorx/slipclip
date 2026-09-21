@@ -101,16 +101,20 @@ export function applyMapping(highlight, mapping) {
   return props;
 }
 
-const COLUMN = /(?:^|[(,])\s*"([^"]+)"\s+(TITLE|RICH_TEXT|DATE|URL|EMAIL|PHONE_NUMBER|STATUS|FILES|PEOPLE|CHECKBOX|NUMBER|SELECT|MULTI_SELECT|UNIQUE_ID|CREATED_TIME|LAST_EDITED_TIME|FORMULA|RELATION|ROLLUP)\b/;
+// ponytail: global, because a schema can arrive as a single line. A non-global
+// regex returns only the first match per call, which silently truncates the
+// schema to one column and writes a partial row rather than failing.
+const COLUMN = /(?:^|[(,])\s*"([^"]+)"\s+(TITLE|RICH_TEXT|DATE|URL|EMAIL|PHONE_NUMBER|STATUS|FILES|PEOPLE|CHECKBOX|NUMBER|SELECT|MULTI_SELECT|UNIQUE_ID|CREATED_TIME|LAST_EDITED_TIME|FORMULA|RELATION|ROLLUP)\b/g;
 
-// notion-fetch reports a database's columns as a CREATE TABLE block. Columns
-// carry quoted names; anything else on the line is ignored.
+// notion-fetch reports a database's columns as a CREATE TABLE block, on one line
+// or on several. Columns carry quoted names; anything else on the line is
+// ignored.
 export function parseProperties(raw) {
   const out = [];
   for (const line of unwrapPayload(raw).split("\n")) {
-    const m = COLUMN.exec(line);
-    if (!m || out.some((p) => p.name === m[1])) continue;
-    out.push({ name: m[1], type: m[2] });
+    for (const m of line.matchAll(COLUMN)) {
+      if (!out.some((p) => p.name === m[1])) out.push({ name: m[1], type: m[2] });
+    }
   }
   return out;
 }
@@ -121,23 +125,27 @@ export function parseDataSourceId(raw) {
 }
 
 // Ordered, and each field takes the first unused property that fits it, so the
-// title column cannot be stolen by the Source field.
+// title column cannot be stolen by the Source field. `guess` is true only where
+// the field's own rule is a property TYPE - there is exactly one title column
+// and the spec says "any url-typed property". For the name-based fields, taking
+// the first rich_text column would quietly write the article title into
+// whichever column happened to come first.
 const FIELD_RULES = [
-  ["text",    (p) => p.type === "TITLE",     /highlight|quote|passage|text/i],
-  ["url",     (p) => p.type === "URL",       /url|link/i],
-  ["created", (p) => p.type === "DATE",      /highlight|saved|created|date/i],
-  ["title",   (p) => p.type === "RICH_TEXT", /source|article|book|page|title/i],
-  ["author",  (p) => p.type === "RICH_TEXT", /author|byline|writer|creator/i],
-  ["site",    (p) => p.type === "RICH_TEXT", /site|publication|domain|publisher/i],
-  ["note",    (p) => p.type === "RICH_TEXT", /note|comment|thought/i]
+  ["text",    (p) => p.type === "TITLE",     /highlight|quote|passage|text/i,       true],
+  ["url",     (p) => p.type === "URL",       /url|link/i,                         true],
+  ["created", (p) => p.type === "DATE",      /highlight|saved|created|date/i,      true],
+  ["title",   (p) => p.type === "RICH_TEXT", /source|article|book|page|title/i,    false],
+  ["author",  (p) => p.type === "RICH_TEXT", /author|byline|writer|creator/i,      false],
+  ["site",    (p) => p.type === "RICH_TEXT", /site|publication|domain|publisher/i, false],
+  ["note",    (p) => p.type === "RICH_TEXT", /note|comment|thought/i,              false]
 ];
 
 export function matchProperties(properties) {
   const mapping = {};
   const taken = new Set();
-  for (const [field, byType, byName] of FIELD_RULES) {
+  for (const [field, byType, byName, guess] of FIELD_RULES) {
     const pool = properties.filter((p) => !taken.has(p.name) && byType(p));
-    const pick = pool.find((p) => byName.test(p.name)) || pool[0];
+    const pick = pool.find((p) => byName.test(p.name)) || (guess ? pool[0] : null);
     if (!pick) continue;
     taken.add(pick.name);
     mapping[field] = { name: pick.name, type: pick.type };
@@ -153,4 +161,40 @@ export async function readHighlights() {
 export async function writeHighlights(list) {
   await browser.storage.local.set({ [HIGHLIGHTS_KEY]: list });
   return list;
+}
+
+// Collapses concurrent calls into one, so a second Sync press while a flush is
+// in flight joins it rather than writing the same queue to Notion twice.
+export function coalesce(fn) {
+  let running = null;
+  return (...args) => {
+    running ??= Promise.resolve()
+      .then(() => fn(...args))
+      .finally(() => { running = null; });
+    return running;
+  };
+}
+
+// The flush's whole storage story, kept here so it can be tested without a
+// network: read, send, then stamp - against a FRESH read, because a capture
+// that lands mid-request must not be erased by the stale copy we started with.
+// ponytail: at-least-once. A popup killed after Notion commits but before the
+// stamp re-sends that batch on the next open; the window is about a second and
+// the failure mode is a visible duplicate row.
+export async function flushPending(createPages, { chunkSize = 50 } = {}) {
+  const todo = pending(await readHighlights());
+  if (!todo.length) return 0;
+
+  let sent = 0;
+  for (let i = 0; i < todo.length; i += chunkSize) {
+    const batch = todo.slice(i, i + chunkSize);
+    await createPages(batch);
+
+    const stamped = Date.now();
+    const done = new Set(batch.map((h) => h.key));
+    const fresh = await readHighlights();
+    await writeHighlights(fresh.map((h) => (done.has(h.key) ? { ...h, synced: stamped } : h)));
+    sent += batch.length;
+  }
+  return sent;
 }

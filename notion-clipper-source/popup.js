@@ -1,7 +1,7 @@
 import { extractPage } from "./extract.js";
 
 import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
-import { groupBySource, pending, readHighlights, writeHighlights, applyMapping } from "./highlights.js";
+import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping } from "./highlights.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -251,29 +251,22 @@ function renderHighlights(list) {
   }
 }
 
-// One call per flush, one row per highlight, only the unsynced ones.
+// A destination is only needed once something is actually queued, so an
+// extension nobody has set up for highlights does not open with an error.
 async function flushHighlights() {
+  if (!pending(await readHighlights()).length) return 0;
+
   const { destinations } = await browser.storage.local.get("destinations");
   const dest = destinations?.highlights;
   if (!dest?.dataSourceId) throw new Error("No highlights destination set. Open Settings.");
+  if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Open Settings.");
 
-  const list = await readHighlights();
-  const todo = pending(list);
-  if (!todo.length) return 0;
-
-  await mcpTool("notion-create-pages", {
+  // The storage choreography lives in highlights.js, where stamping against a
+  // fresh read is covered by tests.
+  return flushPending((batch) => mcpTool("notion-create-pages", {
     parent: { data_source_id: dest.dataSourceId },
-    pages: todo.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
-  });
-
-  // Only now is it safe to call them done: a popup killed mid-call leaves the
-  // queue untouched and the next flush retries the whole batch.
-  // ponytail: a truthy marker, not the page id - nothing reads the id, and
-  // depending on the response shape would make marking silently fragile.
-  const done = new Set(todo.map((h) => h.key));
-  const stamped = Date.now();
-  await writeHighlights(list.map((h) => (done.has(h.key) ? { ...h, synced: stamped } : h)));
-  return todo.length;
+    pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
+  }));
 }
 
 // ---------- UI ----------
@@ -364,16 +357,23 @@ if (typeof browser !== "undefined") {
       $("sync").textContent = waiting ? `Sync ${waiting} to Notion` : "Nothing to sync";
     };
 
+    // Coalesced: a second press while a flush is in flight joins it instead of
+    // writing the same queue to Notion twice.
+    const syncNow = coalesce(flushHighlights);
+
     // The popup is the app's only surface, so the queue drains here - whichever
     // tab you happened to land on. A failure leaves it queued for a retry.
     const flushNow = async () => {
       try {
-        const n = await flushHighlights();
+        const n = await syncNow();
         if (n) say(`Synced ${n} highlight${n === 1 ? "" : "s"}.`);
       } catch (e) {
         say("Highlights: " + e.message, "error");
       }
       await refresh();
+      // The badge belongs to the background worker; without this it keeps
+      // showing the old count until the next capture.
+      await browser.runtime.sendMessage({ type: "repaint-badge" }).catch(() => {});
     };
 
     $("sync").addEventListener("click", () => {

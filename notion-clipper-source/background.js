@@ -42,6 +42,9 @@ browser.runtime.onMessage.addListener((msg) => {
       return accessToken()
         .then((token) => ({ ok: true, token }))
         .catch((e) => ({ ok: false, error: e.message }));
+    // The popup drains the queue but the badge is this worker's, so it asks.
+    case "repaint-badge":
+      return paintBadge().then(() => ({ ok: true }));
   }
 });
 
