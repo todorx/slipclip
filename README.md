@@ -32,7 +32,7 @@
 
 ## Quick start
 
-1. `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → pick `notion-clipper-source/manifest.json`.
+1. Firefox: `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → pick `notion-clipper-source/manifest.json`. Chrome: `chrome://extensions` → Developer mode → Load unpacked → pick `notion-clipper-source/`.
 2. Click the add-on → **Connect Notion** → choose which pages to share.
 3. Pick a destination → Clip.
 
@@ -84,7 +84,7 @@ npx -y web-ext sign --source-dir notion-clipper-source --channel unlisted --api-
 
 `--channel unlisted` returns a self-distributable `.xpi`; `--channel listed` submits for review. The site's download button points at releases, so publish the signed file there first.
 
-Firefox 140 is the floor (`strict_min_version`): host permissions grant-at-install needs 127+, `data_collection_permissions` needs 140. Firefox for Android reads that key only from 142, so leave the Android listing off on AMO.
+Firefox 140 is the floor (MV3 service workers); Chrome 120+ for DNR modifyHeaders. (`strict_min_version`): host permissions grant-at-install needs 127+, `data_collection_permissions` needs 140. Firefox for Android reads that key only from 142, so leave the Android listing off on AMO.
 
 ## Site deploy
 

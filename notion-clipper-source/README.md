@@ -1,4 +1,4 @@
-# SlipClip for Notion (Firefox)
+# SlipClip for Notion
 
 Clips the current page URL + title + selected text to Notion. Sign in with Notion — no integration token to create, copy, or paste.
 
@@ -56,4 +56,4 @@ Covers the PKCE S256 derivation against the RFC 7636 test vector, Notion URL →
 - Notion's MCP server is in beta. Tool schemas are not version-pinned the way `Notion-Version: 2022-06-28` pins the REST API, so a schema change upstream can require a patch here.
 - Firefox 140+. Manifest V3 host permissions are only granted at install from 127 onward - on 126 and earlier Firefox installs the extension without ever granting `https://mcp.notion.com/*`, and every request to Notion fails. `data_collection_permissions` then pushes the floor to 140, the version that reads it. `strict_min_version` keeps everything older out.
 - The manifest declares `data_collection_permissions` (`websiteContent`, `searchTerms`) - what the clip and the destination search send to Notion. AMO requires the key on every new extension, and Firefox shows it on the install prompt.
-- Firefox only. A Chrome port needs `chrome.*` aliases; the redirect URL is handled by dynamic registration either way.
+- Firefox + Chrome from one codebase (MV3 service-worker background, DNR Origin strip, `browser`/`chrome` shim); the redirect URL is handled by dynamic registration either way.
