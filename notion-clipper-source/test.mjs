@@ -4,7 +4,7 @@ import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./au
 import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
 import { buildMarkdown, optionLabel, parseChildDatabases, formatDuration } from "./popup.js";
 import { extractPage } from "./extract.js";
-import { canonicalUrl, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, readHighlights, writeHighlights } from "./highlights.js";
+import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, readHighlights, writeHighlights } from "./highlights.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -211,6 +211,10 @@ assert.equal(
 );
 assert.equal(canonicalUrl("https://example.com/a?page=2"), "https://example.com/a?page=2", "a meaningful query parameter survives");
 assert.equal(canonicalUrl("not a url"), "not a url", "unparseable input is passed through");
+
+assert.equal(siteOf("https://www.example.com/a/b"), "example.com", "the www is not part of the site");
+assert.equal(siteOf("https://News.Example.COM/x"), "news.example.com", "host case is normalised");
+assert.equal(siteOf("not a url"), "", "an unparseable url yields no site");
 
 // A passage saved twice is one highlight; the same passage in two articles is two.
 const articleA = "https://example.com/a";

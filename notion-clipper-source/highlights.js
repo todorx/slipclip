@@ -27,6 +27,12 @@ export function canonicalUrl(raw) {
   return u.href;
 }
 
+// The site a highlight came from - the Source column's fallback label when a
+// page title is missing.
+export function siteOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./i, "").toLowerCase(); } catch { return ""; }
+}
+
 // A passage is identified by where it came from and what it says.
 export function dedupeKey(url, text) {
   return `${canonicalUrl(url)}\u0000${String(text ?? "").replace(/\s+/g, " ").trim()}`;

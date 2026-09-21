@@ -1,17 +1,19 @@
 {
   "manifest_version": 3,
   "name": "SlipClip for Notion",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Clip an article, video or link into Notion. Sign in with Notion, nothing to paste.",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
     "identity",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "contextMenus"
   ],
   "host_permissions": [
-    "https://mcp.notion.com/*"
+    "https://mcp.notion.com/*",
+    "https://slipclip.todorx.dev/*"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -19,8 +21,15 @@
     ]
   },
   "background": {
+    "scripts": ["background.js"],
     "service_worker": "background.js",
     "type": "module"
+  },
+  "commands": {
+    "save-highlight": {
+      "suggested_key": { "default": "Alt+Shift+H" },
+      "description": "Save the selected text as a highlight"
+    }
   },
   "action": {
     "default_popup": "popup.html",
@@ -37,6 +46,9 @@
       "data_collection_permissions": {
         "required": ["websiteContent", "searchTerms"]
       }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
     }
   },
   "homepage_url": "https://slipclip.todorx.dev"
