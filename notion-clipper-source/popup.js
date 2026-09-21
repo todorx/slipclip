@@ -345,6 +345,7 @@ if (typeof browser !== "undefined") {
 
   $("tab-clip").addEventListener("click", () => showTab("clip"));
   $("tab-highlights").addEventListener("click", () => showTab("highlights"));
+  $("openoptions").addEventListener("click", () => browser.runtime.openOptionsPage());
 
   (async () => {
     const s = await browser.storage.local.get(["parent", "parentType"]);

@@ -240,6 +240,21 @@ select:disabled { opacity: .45; }
 
 #sync:disabled { opacity: .35; cursor: not-allowed; }
 
+#openoptions {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+#openoptions:hover { color: var(--ink); border-color: var(--ink); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
@@ -296,6 +311,7 @@ select:disabled { opacity: .45; }
 <div id="highlights-pane" hidden>
   <div id="hlist"></div>
   <button id="sync" disabled>Nothing to sync</button>
+  <button id="openoptions">Open Settings</button>
 </div>
 
 <script type="module" src="popup.js"></script>
