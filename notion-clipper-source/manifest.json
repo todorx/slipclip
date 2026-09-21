@@ -8,14 +8,19 @@
     "storage",
     "scripting",
     "identity",
-    "webRequest",
-    "webRequestBlocking"
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "https://mcp.notion.com/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "mcp-origin", "enabled": true, "path": "rules.json" }
+    ]
+  },
   "background": {
-    "page": "background.html"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
