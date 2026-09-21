@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="notion-clipper-source/icons/icon.svg" width="120" alt="SlipClip logo" />
+  <img src="slipclip-logo.png" width="180" alt="SlipClip logo" />
 </p>
 
 <h1 align="center">SlipClip for Notion</h1>
