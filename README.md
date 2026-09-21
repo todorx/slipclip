@@ -11,12 +11,14 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
   <a href="https://www.mozilla.org/firefox/"><img src="https://img.shields.io/badge/Firefox-140%2B-orange?logo=firefox" alt="Firefox 140+" /></a>
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/"><img src="https://img.shields.io/amo/v/slipclip-for-notion?label=Firefox%20Add-on" alt="Firefox Add-on" /></a>
   <a href="https://github.com/todorx/slipclip/actions/workflows/test.yml"><img src="https://github.com/todorx/slipclip/actions/workflows/test.yml/badge.svg" alt="Test extension" /></a>
   <a href="https://slipclip.todorx.dev"><img src="https://img.shields.io/badge/site-slipclip.todorx.dev-blue" alt="Site" /></a>
 </p>
 
 <p align="center">
   <a href="https://slipclip.todorx.dev">Website</a> ·
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">Install on Firefox</a> ·
   <a href="notion-clipper-source/">Extension</a> ·
   <a href="notion-clipper-site/privacy.html">Privacy</a> ·
   <a href="#quick-start">Quick start</a>
