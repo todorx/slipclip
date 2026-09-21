@@ -102,7 +102,7 @@ h1, h2, h3 {
   text-decoration: none;
 }
 
-.brand svg { width: 26px; height: 26px; border-radius: 7px; }
+.brand img { width: 26px; height: 26px; border-radius: 7px; }
 
 .top nav {
   display: flex;
