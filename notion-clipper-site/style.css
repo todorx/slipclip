@@ -426,6 +426,10 @@ footer {
     animation: none !important;
     transition: none !important;
   }
-  .reveal, .slip span, .arrow { opacity: 1; transform: none; }
+  /* .js- prefixed to match the specificity of the rules that hide these.
+     Without it .js .slip span { opacity: 0 } wins and the hero card renders
+     blank, because the animation that would have revealed it is switched off
+     two lines above. */
+  .js .reveal, .js .slip span, .js .arrow { opacity: 1; transform: none; }
   .hero h1 em::after { transform: scaleX(1); }
 }

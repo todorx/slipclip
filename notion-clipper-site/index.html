@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>SlipClip for Notion — clip the page, not the page furniture</title>
-<meta name="description" content="A Firefox extension that reads the article and files clean Markdown into Notion. Skips nav, comments and recommendations. Signs in with Notion — no integration token to paste, no server in the middle.">
+<meta name="description" content="A Firefox and Chrome extension that reads the article and files clean Markdown into Notion. Skips nav, comments and recommendations. Signs in with Notion — no integration token to paste, no server in the middle.">
 <link rel="canonical" href="https://slipclip.todorx.dev/">
 <meta name="robots" content="index, follow">
 <link rel="sitemap" type="application/xml" href="/sitemap.xml">
@@ -43,19 +43,19 @@
   "alternateName": "SlipClip",
   "applicationCategory": "BrowserApplication",
   "applicationSubCategory": "Web Clipper",
-  "operatingSystem": "Firefox",
-  "browserRequirements": "Firefox 140 or later",
-  "softwareVersion": "1.0.0",
+  "operatingSystem": "Firefox, Chrome",
+  "browserRequirements": "Firefox 140 or later; Chrome 120 or later",
+  "softwareVersion": "1.3.0",
   "url": "https://slipclip.todorx.dev/",
   "downloadUrl": "https://github.com/todorx/slipclip/releases",
-  "installUrl": "https://github.com/todorx/slipclip/releases",
-  "description": "A Firefox extension that extracts the readable article from a web page and files it into Notion as Markdown.",
+  "installUrl": "https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/",
+  "description": "A Firefox and Chrome extension that extracts the readable article from a web page and files it into Notion as Markdown.",
   "screenshot": "https://slipclip.todorx.dev/og.png",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "isAccessibleForFree": true,
   "license": "https://github.com/todorx/slipclip/blob/main/LICENSE",
   "codeRepository": "https://github.com/todorx/slipclip",
-  "sameAs": ["https://github.com/todorx/slipclip"],
+  "sameAs": ["https://github.com/todorx/slipclip", "https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/"],
   "author": {
     "@type": "Organization",
     "name": "SlipClip",
@@ -76,6 +76,7 @@
       <a href="#clips">What it clips</a>
       <a href="#signin">Signing in</a>
       <a href="privacy.html">Privacy</a>
+      <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">Add-ons</a>
       <a href="https://github.com/todorx/slipclip">GitHub</a>
     </nav>
   </div>
@@ -84,7 +85,7 @@
 <main>
 
 <section class="hero wrap">
-  <span class="eyebrow">Firefox extension</span>
+  <span class="eyebrow">Firefox &amp; Chrome extension</span>
   <h1>Clip the article. <em>Not the furniture.</em></h1>
   <p class="lede">
     SlipClip reads the page the way a reader does — finds the article, drops the nav,
@@ -93,10 +94,10 @@
   </p>
 
   <div class="actions">
-    <a class="btn btn-primary" href="https://github.com/todorx/slipclip/releases">Get the latest build</a>
+    <a class="btn btn-primary" href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">Add to Firefox</a>
     <a class="btn btn-ghost" href="https://github.com/todorx/slipclip">Read the source</a>
   </div>
-  <p class="fineprint">Firefox 140+. Free and open source. Not yet listed on addons.mozilla.org.</p>
+  <p class="fineprint">Firefox 140+ from <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">addons.mozilla.org</a>. Chrome 120+ by loading the <a href="https://github.com/todorx/slipclip/releases">source</a> unpacked. Free and open source.</p>
 
   <div class="stage" id="stage" aria-hidden="true">
     <div class="card source">
@@ -222,8 +223,9 @@ What the talk covers…</pre>
 
 <footer>
   <div class="wrap foot">
-    <span>SlipClip for Notion · v1.0.0</span>
+    <span>SlipClip for Notion · v1.3.0</span>
     <span>
+      <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">Firefox Add-ons</a> ·
       <a href="privacy.html">Privacy</a> ·
       <a href="https://github.com/todorx/slipclip">GitHub</a> ·
       <a href="https://github.com/todorx/slipclip/issues">Report an issue</a>
