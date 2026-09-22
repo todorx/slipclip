@@ -1,7 +1,7 @@
 import { extractPage } from "./extract.js";
 
 import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
-import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping } from "./highlights.js";
+import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping, highlightsMarkdown, quoteLines } from "./highlights.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -49,11 +49,6 @@ export function formatDuration(iso) {
     ? `${hours}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`
     : `${Math.floor(total / 60)}:${pad(total % 60)}`;
 }
-
-// Every line prefixed, blanks included, so a multi-line quote stays one
-// blockquote in Notion instead of splitting into a stack of them.
-const quoteLines = (text) =>
-  text.split(/\r?\n/).map((l) => (l.trim() ? `> ${l}` : ">")).join("\n");
 
 // `heading` turns the source line into an H2 - appended clips need a visible
 // break between them, a new page does not.
@@ -203,15 +198,7 @@ async function clip() {
 
 // ---------- highlights ----------
 
-function showTab(which) {
-  $("clip-pane").hidden = which !== "clip";
-  $("highlights-pane").hidden = which !== "highlights";
-  $("tab-clip").setAttribute("aria-selected", String(which === "clip"));
-  $("tab-highlights").setAttribute("aria-selected", String(which === "highlights"));
-}
-
 function renderHighlights(list) {
-  $("hcount").textContent = list.length ? `(${list.length})` : "";
   const box = $("hlist");
   box.replaceChildren();
   if (!list.length) {
@@ -242,13 +229,37 @@ function renderHighlights(list) {
       del.textContent = "Delete";
       del.addEventListener("click", async () => {
         await writeHighlights((await readHighlights()).filter((x) => x.key !== h.key));
-        renderHighlights(await readHighlights());
+        // Deleting changes the pending count, so the sync button and the badge
+        // both have to follow it - not just the list.
+        await refreshHighlights();
+        await repaintBadge();
       });
 
       row.append(quote, source, del);
       box.append(row);
     }
   }
+}
+
+// The badge is the background worker's, so it has to be asked to repaint;
+// without this it keeps showing the count from before the popup drained.
+const repaintBadge = () => browser.runtime.sendMessage({ type: "repaint-badge" }).catch(() => {});
+
+// Set by a failed flush so the sync control offers Retry rather than pretending
+// nothing happened.
+let flushFailed = false;
+
+async function refreshHighlights() {
+  const list = await readHighlights();
+  renderHighlights(list);
+  const waiting = pending(list).length;
+  // The collapsed summary is one line, so the count is the only thing on it
+  // worth reading. Nothing waiting means no control at all rather than a dead
+  // disabled button.
+  $("hcount").textContent = waiting ? `${waiting} waiting` : "";
+  $("sync").hidden = !waiting;
+  $("sync").disabled = false;
+  $("sync").textContent = flushFailed ? `Retry ${waiting}` : `Sync ${waiting} to Notion`;
 }
 
 // A destination is only needed once something is actually queued, so an
@@ -258,11 +269,27 @@ async function flushHighlights() {
 
   const { destinations } = await browser.storage.local.get("destinations");
   const dest = destinations?.highlights;
+  // A config stored before pages were allowed carries no kind, and could only
+  // ever have been a database.
+  const kind = dest?.kind ?? "database";
+
+  // The storage choreography lives in highlights.js either way - flushPending
+  // takes the writer, so only the call inside it changes.
+  if (kind === "page") {
+    if (!dest?.pageId) throw new Error("No highlights destination set. Open Settings.");
+    return flushPending((batch) => mcpTool("notion-update-page", {
+      page_id: dest.pageId,
+      command: "insert_content",
+      content: highlightsMarkdown(batch),
+      position: { type: "end" },
+      // allow_async defaults true, which answers with a task rather than a
+      // result - and the batch is only stamped once this returns.
+      allow_async: false
+    }));
+  }
+
   if (!dest?.dataSourceId) throw new Error("No highlights destination set. Open Settings.");
   if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Open Settings.");
-
-  // The storage choreography lives in highlights.js, where stamping against a
-  // fresh read is covered by tests.
   return flushPending((batch) => mcpTool("notion-create-pages", {
     parent: { data_source_id: dest.dataSourceId },
     pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
@@ -336,8 +363,6 @@ if (typeof browser !== "undefined") {
     catch (e) { say("Error: " + e.message, "error"); }
   });
 
-  $("tab-clip").addEventListener("click", () => showTab("clip"));
-  $("tab-highlights").addEventListener("click", () => showTab("highlights"));
   $("openoptions").addEventListener("click", () => browser.runtime.openOptionsPage());
 
   (async () => {
@@ -349,14 +374,6 @@ if (typeof browser !== "undefined") {
 
     const { access_token } = await browser.storage.local.get("access_token");
 
-    const refresh = async () => {
-      const list = await readHighlights();
-      renderHighlights(list);
-      const waiting = pending(list).length;
-      $("sync").disabled = !waiting;
-      $("sync").textContent = waiting ? `Sync ${waiting} to Notion` : "Nothing to sync";
-    };
-
     // Coalesced: a second press while a flush is in flight joins it instead of
     // writing the same queue to Notion twice.
     const syncNow = coalesce(flushHighlights);
@@ -364,16 +381,24 @@ if (typeof browser !== "undefined") {
     // The popup is the app's only surface, so the queue drains here - whichever
     // tab you happened to land on. A failure leaves it queued for a retry.
     const flushNow = async () => {
+      // The spec asks the tab to report progress; the control is the only place
+      // to put it, since the status line belongs to whichever tab you are on.
+      if (pending(await readHighlights()).length) {
+        $("sync").disabled = true;
+        $("sync").textContent = "Syncing...";
+      }
       try {
         const n = await syncNow();
+        flushFailed = false;
         if (n) say(`Synced ${n} highlight${n === 1 ? "" : "s"}.`);
       } catch (e) {
+        flushFailed = true;
+        // Whatever went wrong is about the queue, so show the queue.
+        $("highlights").open = true;
         say("Highlights: " + e.message, "error");
       }
-      await refresh();
-      // The badge belongs to the background worker; without this it keeps
-      // showing the old count until the next capture.
-      await browser.runtime.sendMessage({ type: "repaint-badge" }).catch(() => {});
+      await refreshHighlights();
+      await repaintBadge();
     };
 
     $("sync").addEventListener("click", () => {
@@ -382,7 +407,7 @@ if (typeof browser !== "undefined") {
     });
 
     if (access_token) await flushNow();
-    else await refresh();
+    else await refreshHighlights();
 
     if (!access_token) return;
     await loadPicker("");

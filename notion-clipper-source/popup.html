@@ -29,9 +29,11 @@
 
 * { box-sizing: border-box; }
 
+/* No max-width here: a popup window is sized FROM this layout, so 100vw
+   resolves against the not-yet-sized viewport, body clamps to that, and the
+   browser then sizes the popup to the clamped width. It collapses to a strip. */
 body {
   width: 340px;
-  max-width: 100vw;
   margin: 0;
   padding: 14px;
   background: var(--paper);
@@ -169,22 +171,29 @@ select:disabled { opacity: .45; }
   border-top: 1px solid var(--edge);
 }
 
-/* Two panes, so the clip flow keeps the whole popup when it is the one you want. */
-.tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+/* One pane. <details> is the disclosure widget - keyboard and screen reader
+   behaviour come with it, and there is no open/closed state to keep in JS. */
+#highlights {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--edge);
+}
 
-.tab {
-  flex: 1;
-  padding: 6px;
-  font: inherit;
-  font-size: 12px;
+#highlights summary {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
   color: var(--muted);
-  background: none;
-  border: 1px solid var(--edge);
-  border-radius: 7px;
   cursor: pointer;
 }
 
-.tab[aria-selected="true"] { color: var(--ink); border-color: var(--ink); }
+#highlights summary:hover { color: var(--ink); }
+#highlights[open] summary { margin-bottom: 8px; color: var(--ink); }
+
+/* The count is the whole point of the collapsed line, so it carries the mark. */
+#hcount { color: var(--ink); }
+#highlights:not([open]) #hcount:not(:empty) { color: var(--mark); }
 
 .hitem {
   padding: 8px 0;
@@ -267,13 +276,6 @@ select:disabled { opacity: .45; }
   <button id="connect">Connect Notion</button>
 </div>
 
-<nav class="tabs">
-  <button id="tab-clip" class="tab" aria-selected="true">Clip</button>
-  <button id="tab-highlights" class="tab" aria-selected="false">Highlights <span id="hcount"></span></button>
-</nav>
-
-<div id="clip-pane">
-
 <label>
   <span class="lab">Search</span>
   <input id="q" placeholder="Find a page, or leave blank">
@@ -305,13 +307,13 @@ select:disabled { opacity: .45; }
 <button id="clip" disabled>Clip this page</button>
 
 <p class="note">Clips reach only the pages you shared on Notion's consent screen.</p>
-</div>
 
-<div id="highlights-pane" hidden>
+<details id="highlights">
+  <summary>Highlights <span id="hcount"></span></summary>
   <div id="hlist"></div>
-  <button id="sync" disabled>Nothing to sync</button>
+  <button id="sync" hidden>Sync to Notion</button>
   <button id="openoptions">Open Settings</button>
-</div>
+</details>
 
 <div id="status"></div>
 

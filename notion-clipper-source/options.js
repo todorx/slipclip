@@ -3,7 +3,7 @@
 // create-for-me button - everything else is configuration.
 
 import { mcpTool, parseResults, normalizeId } from "./mcp.js";
-import { parseDataSourceId, parseProperties, matchProperties } from "./highlights.js";
+import { parseDataSourceId, parseProperties, matchProperties, parseFetchKind } from "./highlights.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -86,22 +86,40 @@ async function store(dest) {
   await browser.storage.local.set({ destinations: { highlights: dest } });
 }
 
-function showSaved(name) {
+function showSaved(name, kind) {
   $("saved").hidden = false;
-  $("saved").textContent = `Saving into ${name || "the selected database"}. New highlights sync there.`;
+  $("saved").textContent = kind === "page"
+    ? `Appending to ${name || "the selected page"}. New highlights are added to the end, grouped by source.`
+    : `Saving into ${name || "the selected database"}. New highlights sync there.`;
 }
 
-// We had to fetch the schema anyway, so take the data source id from the same
-// payload: once a database has more than one source, database_id is rejected.
-async function useDatabase(id) {
-  say("Reading the database...");
+// Both kinds of destination are valid and they need different things: a
+// database needs its columns mapped, a page needs nothing, so it saves on the
+// spot. We had to fetch the schema anyway, so take the data source id from the
+// same payload: once a database has more than one source, database_id is
+// rejected.
+async function useDestination(id, name) {
+  say("Reading that destination...");
   const raw = await mcpTool("notion-fetch", { id });
+  // The name is only ever shown back to the user; a pasted link arrives without
+  // one, and showSaved already has wording for that.
+  const label = name?.trim() || "";
+
+  if (parseFetchKind(raw) === "page") {
+    schema = [];
+    $("map").hidden = true;
+    current = { kind: "page", pageId: normalizeId(id) || id, name: label };
+    await store(current);
+    showSaved(label, "page");
+    return say("Saved. Nothing to map - passages are appended as quotes.");
+  }
+
   const dataSourceId = parseDataSourceId(raw);
   schema = parseProperties(raw);
   if (!dataSourceId || !schema.length) {
-    throw new Error("Could not read that database's columns. Pick a database rather than a page, or use Create one for me.");
+    throw new Error("Could not read that destination. Pick a page or a database, or use Create a database for me.");
   }
-  current = { dataSourceId };
+  current = { kind: "database", dataSourceId, name: label };
   renderMapping(matchProperties(schema));
   say(`${schema.length} columns found. Check the mapping, then save it.`);
 }
@@ -111,8 +129,15 @@ async function saveMapping() {
   // Notion requires a title on every row, so a passage mapped anywhere else
   // would be refused at flush time - catch it while the user is looking at it.
   if (mapping.text?.type !== "TITLE") return say("The passage has to go in the database's title column.", "error");
+
+  // Two fields on one column means the second write silently wins - catch it
+  // here rather than losing a value on every flush.
+  const names = Object.values(mapping).map((m) => m.name);
+  if (new Set(names).size !== names.length)
+    return say("Two fields point at the same column. Give each its own, or set the extra one to “not saved”.", "error");
+
   await store({ ...current, mapping });
-  showSaved(schema.find((p) => p.name === mapping.text.name)?.name);
+  showSaved(current.name, current.kind);
   say("");
 }
 
@@ -135,31 +160,37 @@ async function createDatabase() {
   if (!schema.length) {
     throw new Error("Notion created the database but did not report its columns. Open it once in Notion, then pick it from the list.");
   }
-  current = { dataSourceId };
-  await store({ ...current, mapping: matchProperties(schema) });
-  renderMapping(matchProperties(schema));
-  showSaved("SlipClip Highlights");
+  current = { kind: "database", dataSourceId, name: "SlipClip Highlights" };
+  const mapping = matchProperties(schema);
+  await store({ ...current, mapping });
+  renderMapping(mapping);
+  showSaved(current.name, current.kind);
   say(`Created with ${schema.length} columns, already mapped.`);
 }
 
+// Debounced as one branch: typing an id out by hand would otherwise fire a
+// notion-fetch per keystroke once the first 32 characters look like one.
 $("q").addEventListener("input", () => {
   clearTimeout($("q")._timer);
-  const typed = $("q").value.trim();
+  $("q")._timer = setTimeout(() => {
+    const typed = $("q").value.trim();
 
-  // Search only ever sees what was shared with the connection, so a pasted link
-  // or id goes straight in rather than being searched for - otherwise a
-  // database the connection cannot see is unreachable.
-  if (/^https?:\/\//i.test(typed) || /^[0-9a-f-]{32,36}$/i.test(typed)) {
-    const id = normalizeId(typed);
-    if (id) return void useDatabase(id).catch((e) => say("Error: " + e.message, "error"));
-  }
+    // Search only ever sees what was shared with the connection, so a pasted
+    // link or id goes straight in rather than being searched for - otherwise a
+    // database the connection cannot see is unreachable.
+    if (/^https?:\/\//i.test(typed) || /^[0-9a-f-]{32,36}$/i.test(typed)) {
+      const id = normalizeId(typed);
+      if (id) return void useDestination(id).catch((e) => say("Error: " + e.message, "error"));
+    }
 
-  $("q")._timer = setTimeout(() => loadList(typed), 350);
+    loadList(typed);
+  }, 350);
 });
 
 $("picker").addEventListener("change", (e) => {
   if (!e.target.value) return;
-  useDatabase(e.target.value).catch((err) => say("Error: " + err.message, "error"));
+  useDestination(e.target.value, e.target.selectedOptions[0]?.textContent)
+    .catch((err) => say("Error: " + err.message, "error"));
 });
 
 $("save").addEventListener("click", () => {
@@ -173,6 +204,6 @@ $("create").addEventListener("click", () => {
 (async () => {
   const { destinations } = await browser.storage.local.get("destinations");
   const dest = destinations?.highlights;
-  if (dest?.mapping?.text?.name) showSaved(dest.mapping.text.name);
+  if (dest?.pageId || dest?.dataSourceId) showSaved(dest.name, dest.kind ?? "database");
   await loadList("");
 })();

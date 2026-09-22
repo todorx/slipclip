@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SlipClip for Notion",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Clip an article, video or link into Notion. Sign in with Notion, nothing to paste.",
   "permissions": [
     "activeTab",

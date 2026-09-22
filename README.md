@@ -30,6 +30,7 @@
 - Smart extraction: articles, YouTube/video pages, index/listing pages, or plain links — picked from JSON-LD / `og:type`.
 - Sign in with Notion, nothing to paste — OAuth 2.1 + PKCE via Notion's hosted MCP server, no backend or secret.
 - Save as new page/row or append to an existing page; inline databases discovered automatically.
+- Highlights: save passages from the context menu or `Alt+Shift+H`, keep them locally, sync them into a Notion database — or append them to an existing page — when the popup opens.
 - No build step, no dependencies. Just load `manifest.json`.
 
 ## Quick start
@@ -43,6 +44,8 @@
 **How** picks what happens at the destination: *New page inside* creates a child page (or a row, if the destination is a database), *Append to the end* adds the clip to the bottom via `notion-update-page` / `insert_content`. Appending is disabled for databases, which cannot hold loose blocks.
 
 The dropdown loads recent pages on open (`notion-list-recent-pages`); typing searches the workspace (`notion-search`). Selecting a page also lists inline databases inside it, indented with `↳`. Both only ever see pages shared during consent. Pasting a link still works for anything the list misses.
+
+**Highlights** accumulate instead of being clipped one at a time. Select text, then use the context menu or `Alt+Shift+H`; the badge counts what is waiting. Nothing is sent while you read — the queue drains into Notion the next time the popup opens, from the **Highlights** disclosure at the bottom of the popup. Pick the destination in **Open Settings**: a database gets one row per passage, a page gets them appended as quotes grouped by source, or let it create a database for you. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
 
 **Save as** resets to *A new page inside* every popup open — appending is a per-clip decision, never sticky.
 

@@ -87,14 +87,19 @@
 
   <h2>What is stored on your device</h2>
   <p>
-    The extension keeps the following in Firefox's local extension storage. It never leaves
-    your browser and is removed when you uninstall the extension.
+    The extension keeps the following in your browser's local extension storage. It never
+    leaves your browser and is removed when you uninstall the extension.
   </p>
   <ul>
     <li>Your Notion OAuth access token, refresh token and expiry time.</li>
     <li>The OAuth client identifier your copy of the extension registered with Notion.</li>
     <li>The last destination you clipped to, so the popup can remember it.</li>
     <li>An error message from the most recent failed sign-in, so it can be shown to you.</li>
+    <li>Highlights you have saved but not yet synced &mdash; the passage itself, the page's
+      address and title, the site it came from, and when you saved it. They are held here so
+      they survive closing the tab, and each one stays until it reaches Notion or you delete
+      it from the Highlights tab.</li>
+    <li>The database or page you chose for highlights, and — for a database — which of its columns holds which field.</li>
   </ul>
   <p>
     Pressing <strong>Disconnect</strong> deletes the tokens and the stored sign-in error.
@@ -117,11 +122,18 @@
       destinations.</li>
     <li><strong>When you select a destination page:</strong> a request for that page, so its
       inline databases can be listed.</li>
+    <li><strong>When you open the popup with highlights waiting:</strong> those highlights and
+      the details listed above, written as rows into the database you chose, or appended as
+      quotes to the page you chose. Nothing is sent while you are only saving highlights
+      &mdash; capture writes to your device alone.</li>
+    <li><strong>When you set up the highlights destination:</strong> a request for that page
+      or database, so its kind and columns can be read &mdash; or a request to create a
+      database, if you asked for one.</li>
   </ul>
   <p>
     Notion's handling of that data is governed by
     <a href="https://www.notion.com/privacy">Notion's Privacy Policy</a>, not this one.
-    Nothing is sent to Notion except in response to one of the three actions above.
+    Nothing is sent to Notion except in response to one of the actions above.
   </p>
 
   <h2>Permissions, and why each exists</h2>
