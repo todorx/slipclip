@@ -69,6 +69,13 @@ export function groupBySource(list) {
 
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 
+// Every line prefixed, blanks included, so a multi-line quote stays one
+// blockquote in Notion instead of splitting into a stack of them. Lives here
+// rather than in popup.js because both markdown builders need it and this is
+// the module without a DOM.
+export const quoteLines = (text) =>
+  String(text ?? "").split(/\r?\n/).map((l) => (l.trim() ? `> ${l}` : ">")).join("\n");
+
 // Notion property names have two sharp edges: "id" and "url" collide with
 // reserved names case-insensitively, and a date is three fields, not one.
 export function applyMapping(highlight, mapping) {
@@ -117,6 +124,40 @@ export function parseProperties(raw) {
     }
   }
   return out;
+}
+
+// Highlights can be saved into a database or appended to an ordinary page, so
+// a fetch has to say which one it got. Read it from metadata, not from whether
+// a collection:// id turns up: a page holding an inline database carries one
+// too, and would be taken for a database.
+export function parseFetchKind(raw) {
+  try {
+    const type = JSON.parse(raw)?.metadata?.type;
+    if (type === "page" || type === "database") return type;
+  } catch { /* markup with no JSON envelope; fall through to the tag */ }
+  const m = /<(page|database)\b/.exec(unwrapPayload(raw));
+  return m ? m[1] : null;
+}
+
+// The page destination's payload: one heading per source, the passages quoted
+// beneath it. Mirrors what buildMarkdown does for an appended clip.
+// ponytail: every sync appends a fresh section, so two syncs from one article
+// leave two headings. Merging means fetching the page, parsing its blocks and
+// inserting mid-document - a round trip and a parser, for cosmetics.
+export function highlightsMarkdown(list) {
+  const sections = [];
+  for (const [canonical, items] of groupBySource(list)) {
+    const first = items[0];
+    const title = first.title || first.site || canonical;
+    const link = `[${String(title).replace(/[[\]]/g, "\\$&")}](${first.url || canonical})`;
+    const facts = [first.site, first.author, first.created && day(first.created)].filter(Boolean).join(" · ");
+    sections.push([
+      `## ${link}`,
+      facts && `*${facts}*`,
+      ...items.map((h) => quoteLines(h.truncated ? h.text + "…" : h.text))
+    ].filter(Boolean).join("\n\n"));
+  }
+  return sections.join("\n\n");
 }
 
 export function parseDataSourceId(raw) {

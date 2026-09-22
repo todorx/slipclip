@@ -4,7 +4,7 @@ import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./au
 import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
 import { buildMarkdown, optionLabel, parseChildDatabases, formatDuration } from "./popup.js";
 import { extractPage } from "./extract.js";
-import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, coalesce, flushPending, readHighlights, writeHighlights } from "./highlights.js";
+import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightsMarkdown, coalesce, flushPending, readHighlights, writeHighlights } from "./highlights.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -393,6 +393,36 @@ assert.deepEqual(sizes, [2, 2, 1], "a large queue is sent in chunks");
 assert.equal(pending(fStore.highlights).length, 0, "and all of it is stamped");
 
 delete globalThis.browser;
+
+// Highlights can land in a page instead of a database, so a fetch has to say
+// which it got. Not by looking for a collection:// id: a page holding an inline
+// database carries one too, and would be mistaken for a database.
+assert.equal(parseFetchKind(fetched), "page", "a page payload reads as a page");
+assert.equal(parseDataSourceId(fetched), "55555555-5555-4555-8555-555555555555",
+  "even though that same page payload does carry a collection id");
+assert.equal(parseFetchKind(dbPayload), "database", "a database payload reads as a database");
+assert.equal(parseFetchKind("neither one"), null, "anything else is unknown, not guessed");
+
+// Appending to a page: one heading per source, the passages quoted beneath it.
+const md = highlightsMarkdown([
+  { key: "1", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A", site: "example.com", text: "Line one\nLine two", created: Date.UTC(2026, 8, 21) },
+  { key: "2", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A", site: "example.com", text: "Second passage.", created: Date.UTC(2026, 8, 21) },
+  { key: "3", canonical: "https://example.com/b", url: "https://example.com/b", title: "Article B", site: "example.com", text: "Elsewhere.", created: Date.UTC(2026, 8, 22) }
+]);
+assert.equal((md.match(/^## /gm) || []).length, 2, "one heading per source, not per passage");
+assert.ok(md.startsWith("## [Article A](https://example.com/a)"), "the source you saved into most recently leads");
+assert.match(md, /\*example\.com · 2026-09-21\*/, "the facts line carries site and date");
+assert.ok(md.includes("> Line one\n> Line two"), "a multi-line passage stays one blockquote, not two");
+assert.ok(md.indexOf("Second passage") < md.indexOf("## [Article B]"), "passages stay under their own source");
+assert.ok(!md.includes("\n\n\n"), "no stacked blank lines between groups");
+assert.equal(highlightsMarkdown([]), "", "nothing queued renders nothing at all");
+
+// The library marks a clipped passage; the page has to say so too.
+assert.match(
+  highlightsMarkdown([{ key: "x", canonical: "https://example.com/a", url: "https://example.com/a", title: "A", text: "Cut", truncated: true, created: Date.UTC(2026, 8, 21) }]),
+  /> Cut…/,
+  "a truncated passage is marked in the page as well"
+);
 
 // extractPage() runs inside the page and is serialized by executeScript, so it
 // stays self-contained - which is also why plain Node cannot run it without a
