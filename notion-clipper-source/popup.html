@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
   color-scheme: light dark;
@@ -28,6 +29,9 @@
 
 * { box-sizing: border-box; }
 
+/* No max-width here: a popup window is sized FROM this layout, so 100vw
+   resolves against the not-yet-sized viewport, body clamps to that, and the
+   browser then sizes the popup to the clamped width. It collapses to a strip. */
 body {
   width: 340px;
   margin: 0;
@@ -167,6 +171,99 @@ select:disabled { opacity: .45; }
   border-top: 1px solid var(--edge);
 }
 
+/* One pane. <details> is the disclosure widget - keyboard and screen reader
+   behaviour come with it, and there is no open/closed state to keep in JS. */
+#highlights {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--edge);
+}
+
+#highlights summary {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#highlights summary:hover { color: var(--ink); }
+#highlights[open] summary { margin-bottom: 8px; color: var(--ink); }
+
+/* The count is the whole point of the collapsed line, so it carries the mark. */
+#hcount { color: var(--ink); }
+#highlights:not([open]) #hcount:not(:empty) { color: var(--mark); }
+
+.hitem {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--edge);
+  font-size: 12px;
+}
+
+.hitem q { display: block; margin-bottom: 4px; }
+
+.hitem cite {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hitem button {
+  margin-top: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hgroup {
+  margin: 12px 0 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hgroup:first-child { margin-top: 0; }
+
+#hlist { max-height: 320px; overflow-y: auto; }
+
+#sync {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--ink);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+#sync:disabled { opacity: .35; cursor: not-allowed; }
+
+#openoptions {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+#openoptions:hover { color: var(--ink); border-color: var(--ink); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
@@ -208,9 +305,17 @@ select:disabled { opacity: .45; }
 </label>
 
 <button id="clip" disabled>Clip this page</button>
-<div id="status"></div>
 
 <p class="note">Clips reach only the pages you shared on Notion's consent screen.</p>
+
+<details id="highlights">
+  <summary>Highlights <span id="hcount"></span></summary>
+  <div id="hlist"></div>
+  <button id="sync" hidden>Sync to Notion</button>
+  <button id="openoptions">Open Settings</button>
+</details>
+
+<div id="status"></div>
 
 <script type="module" src="popup.js"></script>
 </body>

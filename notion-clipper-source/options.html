@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SlipClip highlights</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: #ffffff;
+  --sunk: #f6f6f4;
+  --edge: #e6e6e1;
+  --ink: #1b1b19;
+  --muted: #76766e;
+  --bad: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1b1b1a;
+    --sunk: #252523;
+    --edge: #34342f;
+    --ink: #efefe9;
+    --muted: #9a9a90;
+    --bad: #ff8a75;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+h1 { margin: 0 0 4px; font-size: 18px; }
+p.sub { margin: 0 0 24px; font-size: 13px; color: var(--muted); }
+
+label { display: block; margin-bottom: 14px; }
+
+.lab {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input, select {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--sunk);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  appearance: none;
+}
+
+input:focus-visible, select:focus-visible { outline: none; border-color: var(--ink); }
+
+button {
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--sunk);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button.primary { color: var(--paper); background: var(--ink); border: 0; }
+
+#status { margin-top: 16px; font-size: 12px; color: var(--muted); }
+#status[data-tone="error"] { color: var(--bad); }
+
+#map, #saved { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--edge); }
+
+.row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.row span { font-size: 12px; color: var(--muted); }
+
+#saved { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>SlipClip highlights</h1>
+<p class="sub">Where the passages you save end up — rows in a database, or appended to a page.</p>
+
+<label>
+  <span class="lab">Find a page or database</span>
+  <input id="q" placeholder="Search, or leave blank for recents">
+</label>
+
+<label>
+  <span class="lab">Destination</span>
+  <select id="picker"><option value="">Connect to load</option></select>
+</label>
+
+<button id="create">Create a database for me</button>
+
+<div id="map" hidden>
+  <span class="lab">Columns</span>
+  <div id="rows"></div>
+  <button id="save" class="primary">Save mapping</button>
+</div>
+
+<div id="saved" hidden></div>
+<div id="status"></div>
+
+<script type="module" src="options.js"></script>
+</body>
+</html>

@@ -30,11 +30,12 @@
 - Smart extraction: articles, YouTube/video pages, index/listing pages, or plain links — picked from JSON-LD / `og:type`.
 - Sign in with Notion, nothing to paste — OAuth 2.1 + PKCE via Notion's hosted MCP server, no backend or secret.
 - Save as new page/row or append to an existing page; inline databases discovered automatically.
+- Highlights: save passages from the context menu or `Alt+Shift+H`, keep them locally, sync them into a Notion database — or append them to an existing page — when the popup opens.
 - No build step, no dependencies. Just load `manifest.json`.
 
 ## Quick start
 
-1. `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → pick `notion-clipper-source/manifest.json`.
+1. Firefox: `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → pick `notion-clipper-source/manifest.json`. Chrome: `chrome://extensions` → Developer mode → Load unpacked → pick `notion-clipper-source/`.
 2. Click the add-on → **Connect Notion** → choose which pages to share.
 3. Pick a destination → Clip.
 
@@ -43,6 +44,8 @@
 **How** picks what happens at the destination: *New page inside* creates a child page (or a row, if the destination is a database), *Append to the end* adds the clip to the bottom via `notion-update-page` / `insert_content`. Appending is disabled for databases, which cannot hold loose blocks.
 
 The dropdown loads recent pages on open (`notion-list-recent-pages`); typing searches the workspace (`notion-search`). Selecting a page also lists inline databases inside it, indented with `↳`. Both only ever see pages shared during consent. Pasting a link still works for anything the list misses.
+
+**Highlights** accumulate instead of being clipped one at a time. Select text, then use the context menu or `Alt+Shift+H`; the badge counts what is waiting. Nothing is sent while you read — the queue drains into Notion the next time the popup opens, from the **Highlights** disclosure at the bottom of the popup. Pick the destination in **Open Settings**: a database gets one row per passage, a page gets them appended as quotes grouped by source, or let it create a database for you. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
 
 **Save as** resets to *A new page inside* every popup open — appending is a per-clip decision, never sticky.
 
@@ -53,7 +56,7 @@ A text selection outranks everything: highlight something and the clip is that q
 - Auth talks to Notion's hosted MCP server (`https://mcp.notion.com`) with dynamic client registration (RFC 7591, `token_endpoint_auth_method: "none"`) — designed for public clients. Each install registers as its own OAuth client. Notion's REST OAuth is intentionally avoided: it needs a `client_secret` a public extension cannot hold.
 - Sign-in runs in the background page (`auth.js`), not the popup — Firefox destroys popups when focus moves to the auth window, killing the exchange mid-flight.
 - Pages are created with the `notion-create-pages` MCP tool (Markdown in, no block JSON).
-- Extraction is [@mozilla/readability](https://github.com/mozilla/readability) 0.6.0 + [turndown](https://github.com/mixmark-io/turndown) 7.2.0, vendored unmodified in `vendor/`. A page counts as an index when Readability finds under 600 characters of prose (link text excluded).
+- Extraction is [@mozilla/readability](https://github.com/mozilla/readability) 0.6.0 + [turndown](https://github.com/mixmark-io/turndown) 7.2.0 + [turndown-plugin-gfm](https://github.com/mixmark-io/turndown-plugin-gfm) 1.0.2, vendored unmodified in `vendor/`. A page counts as an index when Readability finds under 600 characters of prose (link text excluded).
 
 See [notion-clipper-source/README.md](notion-clipper-source/README.md) for the full technical notes.
 
@@ -86,7 +89,7 @@ npx -y web-ext sign --source-dir notion-clipper-source --channel unlisted --api-
 
 `--channel unlisted` returns a self-distributable `.xpi`; `--channel listed` submits for review. The site's download button points at releases, so publish the signed file there first.
 
-Firefox 140 is the floor (`strict_min_version`): host permissions grant-at-install needs 127+, `data_collection_permissions` needs 140. Firefox for Android reads that key only from 142, so leave the Android listing off on AMO.
+Firefox 140 is the floor (MV3 service workers); Chrome 120+ for DNR modifyHeaders. (`strict_min_version`): host permissions grant-at-install needs 127+, `data_collection_permissions` needs 140. Firefox for Android reads that key only from 142, so leave the Android listing off on AMO.
 
 ## Site deploy
 

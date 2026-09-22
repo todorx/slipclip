@@ -1,11 +1,9 @@
 import { extractPage } from "./extract.js";
 
-const $ = (id) => document.getElementById(id);
-const MCP = "https://mcp.notion.com";
-const PROTOCOL_VERSION = "2025-06-18";
+import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
+import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping, highlightsMarkdown, quoteLines } from "./highlights.js";
 
-// Auth lives in background.js - see auth.js for why it cannot live here.
-const ask = (type) => browser.runtime.sendMessage({ type });
+const $ = (id) => document.getElementById(id);
 
 // One place to write the status line, so its tone stays in sync with its text.
 function say(text, tone = "") {
@@ -15,38 +13,10 @@ function say(text, tone = "") {
 
 // ---------- pure helpers (imported by test.mjs) ----------
 
-// ponytail: 32-hex -> dashed UUID inline, no lib needed
-export function normalizeId(input) {
-  const m = String(input || "").match(/([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})/i);
-  if (!m) return null;
-  const h = m[1].replace(/-/g, "").toLowerCase();
-  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
-}
-
-// Both notion-search and notion-list-recent-pages answer with a JSON string
-// shaped { results: [...] }. Search carries `id`; recent pages carry only `url`.
-export function parseResults(text) {
-  const { results } = JSON.parse(text || "{}");
-  return (results || [])
-    .map((r) => ({ id: r.id || normalizeId(r.url), title: r.title || "", type: r.type }))
-    .filter((r) => r.id);
-}
-
-// Notion's API errors arrive as a JSON blob; the sentence worth showing is
-// `message`. Anything unparseable is passed through untouched.
-export function errorText(raw) {
-  try { return JSON.parse(raw)?.message || raw; } catch { return raw; }
-}
-
 // Inline databases only exist inside a page's content, so they never appear in
 // recent pages or search. notion-fetch reports them as <database> tags.
 export function parseChildDatabases(raw) {
-  let text = raw;
-  try {
-    const payload = JSON.parse(raw);
-    // Normally the markup is under `text`; stringify covers it moving.
-    text = typeof payload?.text === "string" ? payload.text : JSON.stringify(payload).replace(/\\"/g, '"');
-  } catch { /* already markup */ }
+  const text = unwrapPayload(raw);
   const seen = new Set();
   const out = [];
   // \s before url= on purpose: the tag also carries data-source-url=, which is
@@ -80,11 +50,6 @@ export function formatDuration(iso) {
     : `${Math.floor(total / 60)}:${pad(total % 60)}`;
 }
 
-// Every line prefixed, blanks included, so a multi-line quote stays one
-// blockquote in Notion instead of splitting into a stack of them.
-const quoteLines = (text) =>
-  text.split(/\r?\n/).map((l) => (l.trim() ? `> ${l}` : ">")).join("\n");
-
 // `heading` turns the source line into an H2 - appended clips need a visible
 // break between them, a new page does not.
 export function buildMarkdown(page, { heading = false } = {}) {
@@ -105,72 +70,6 @@ export function buildMarkdown(page, { heading = false } = {}) {
     meat,
     truncated && !selection && "*Article truncated.*"
   ].filter(Boolean).join("\n\n");
-}
-
-// ---------- MCP transport ----------
-
-// ponytail: one JSON-RPC response per POST. Real SSE framing only if Notion
-// starts streaming several messages per request.
-function parseSSE(text) {
-  const last = text.split(/\r?\n\r?\n/).filter((b) => b.includes("data:")).at(-1) || "";
-  const data = last.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("");
-  return data ? JSON.parse(data) : {};
-}
-
-async function rpc(token, sessionId, msg) {
-  const r = await fetch(`${MCP}/mcp`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json, text/event-stream",
-      "MCP-Protocol-Version": PROTOCOL_VERSION,
-      ...(sessionId ? { "Mcp-Session-Id": sessionId } : {})
-    },
-    body: JSON.stringify(msg)
-  });
-  const sid = r.headers.get("Mcp-Session-Id") || sessionId;
-  if (r.status === 401) throw new Error("Notion rejected the session - disconnect and connect again.");
-  if (r.status === 202) return { sid, result: null };
-  const text = await r.text();
-  const body = r.headers.get("Content-Type")?.includes("text/event-stream")
-    ? parseSSE(text)
-    : JSON.parse(text || "{}");
-  if (!r.ok) throw new Error(body?.error?.message || `MCP ${r.status}`);
-  if (body.error) throw new Error(body.error.message);
-  return { sid, result: body.result };
-}
-
-async function openSession(token) {
-  const { sid } = await rpc(token, null, {
-    jsonrpc: "2.0", id: 1, method: "initialize",
-    params: {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: "slipclip", version: "1.0.0" }
-    }
-  });
-  await rpc(token, sid, { jsonrpc: "2.0", method: "notifications/initialized" });
-  return sid;
-}
-
-const textOf = (result) => (result?.content || []).map((c) => c.text).filter(Boolean).join(" ");
-
-async function callTool(token, sid, name, args) {
-  const { result } = await rpc(token, sid, {
-    jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args }
-  });
-  if (result?.isError) throw new Error(errorText(textOf(result)) || "Notion rejected the request.");
-  return result;
-}
-
-// ponytail: one MCP session per tool call. The popup is short-lived, so reusing
-// a session across calls would only pay off in a long-lived page.
-async function mcpTool(name, args) {
-  const auth = await ask("token");
-  if (!auth?.ok) throw new Error(auth?.error || "Not connected.");
-  const sid = await openSession(auth.token);
-  return textOf(await callTool(auth.token, sid, name, args));
 }
 
 // ---------- destination picker ----------
@@ -247,12 +146,12 @@ async function getTabData() {
   let injected = [];
   try {
     // Same isolated world both times, so extractPage sees these as globals.
-    await browser.scripting.executeScript({ target, files: ["vendor/Readability.js", "vendor/turndown.js"] });
+    await browser.scripting.executeScript({ target, files: ["vendor/Readability.js", "vendor/turndown.js", "vendor/turndown-plugin-gfm.js"] });
     injected = await browser.scripting.executeScript({ target, func: extractPage });
   } catch { injected = []; }
 
   const data = injected?.[0]?.result;
-  if (!data) throw new Error("Can't read this page. Firefox blocks extensions on browser pages such as about:debugging - switch to a normal web page and clip that.");
+  if (!data) throw new Error("Can't read this page. Browsers block extensions on browser pages such as about:debugging or chrome://extensions - switch to a normal web page and clip that.");
   return data;
 }
 
@@ -295,6 +194,106 @@ async function clip() {
     if (known || !/not a (page|database)/i.test(e.message)) throw e;
     return await createPage(parentId, "database", pages) || "Clipped to Notion.";
   }
+}
+
+// ---------- highlights ----------
+
+function renderHighlights(list) {
+  const box = $("hlist");
+  box.replaceChildren();
+  if (!list.length) {
+    box.textContent = "No highlights yet. Select some text and press Alt+Shift+H.";
+    return;
+  }
+
+  // The list is newest-first and groupBySource keeps insertion order, so the
+  // source you just saved into is always the first group and each group reads
+  // newest-first too.
+  for (const [canonical, items] of groupBySource(list)) {
+    const head = document.createElement("div");
+    head.className = "hgroup";
+    head.textContent = items[0].title || items[0].site || canonical;
+    box.append(head);
+
+    for (const h of items) {
+      const row = document.createElement("div");
+      row.className = "hitem";
+
+      const quote = document.createElement("q");
+      quote.textContent = h.truncated ? h.text + "…" : h.text;
+
+      const source = document.createElement("cite");
+      source.textContent = h.synced ? "synced" : "waiting";
+
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.addEventListener("click", async () => {
+        await writeHighlights((await readHighlights()).filter((x) => x.key !== h.key));
+        // Deleting changes the pending count, so the sync button and the badge
+        // both have to follow it - not just the list.
+        await refreshHighlights();
+        await repaintBadge();
+      });
+
+      row.append(quote, source, del);
+      box.append(row);
+    }
+  }
+}
+
+// The badge is the background worker's, so it has to be asked to repaint;
+// without this it keeps showing the count from before the popup drained.
+const repaintBadge = () => browser.runtime.sendMessage({ type: "repaint-badge" }).catch(() => {});
+
+// Set by a failed flush so the sync control offers Retry rather than pretending
+// nothing happened.
+let flushFailed = false;
+
+async function refreshHighlights() {
+  const list = await readHighlights();
+  renderHighlights(list);
+  const waiting = pending(list).length;
+  // The collapsed summary is one line, so the count is the only thing on it
+  // worth reading. Nothing waiting means no control at all rather than a dead
+  // disabled button.
+  $("hcount").textContent = waiting ? `${waiting} waiting` : "";
+  $("sync").hidden = !waiting;
+  $("sync").disabled = false;
+  $("sync").textContent = flushFailed ? `Retry ${waiting}` : `Sync ${waiting} to Notion`;
+}
+
+// A destination is only needed once something is actually queued, so an
+// extension nobody has set up for highlights does not open with an error.
+async function flushHighlights() {
+  if (!pending(await readHighlights()).length) return 0;
+
+  const { destinations } = await browser.storage.local.get("destinations");
+  const dest = destinations?.highlights;
+  // A config stored before pages were allowed carries no kind, and could only
+  // ever have been a database.
+  const kind = dest?.kind ?? "database";
+
+  // The storage choreography lives in highlights.js either way - flushPending
+  // takes the writer, so only the call inside it changes.
+  if (kind === "page") {
+    if (!dest?.pageId) throw new Error("No highlights destination set. Open Settings.");
+    return flushPending((batch) => mcpTool("notion-update-page", {
+      page_id: dest.pageId,
+      command: "insert_content",
+      content: highlightsMarkdown(batch),
+      position: { type: "end" },
+      // allow_async defaults true, which answers with a task rather than a
+      // result - and the batch is only stamped once this returns.
+      allow_async: false
+    }));
+  }
+
+  if (!dest?.dataSourceId) throw new Error("No highlights destination set. Open Settings.");
+  if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Open Settings.");
+  return flushPending((batch) => mcpTool("notion-create-pages", {
+    parent: { data_source_id: dest.dataSourceId },
+    pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
+  }));
 }
 
 // ---------- UI ----------
@@ -364,13 +363,52 @@ if (typeof browser !== "undefined") {
     catch (e) { say("Error: " + e.message, "error"); }
   });
 
+  $("openoptions").addEventListener("click", () => browser.runtime.openOptionsPage());
+
   (async () => {
     const s = await browser.storage.local.get(["parent", "parentType"]);
     if (s.parent) $("parent").value = s.parent;
     if (s.parentType) $("parent").dataset.type = s.parentType;
     syncMode();
     await paint();
+
     const { access_token } = await browser.storage.local.get("access_token");
+
+    // Coalesced: a second press while a flush is in flight joins it instead of
+    // writing the same queue to Notion twice.
+    const syncNow = coalesce(flushHighlights);
+
+    // The popup is the app's only surface, so the queue drains here - whichever
+    // tab you happened to land on. A failure leaves it queued for a retry.
+    const flushNow = async () => {
+      // The spec asks the tab to report progress; the control is the only place
+      // to put it, since the status line belongs to whichever tab you are on.
+      if (pending(await readHighlights()).length) {
+        $("sync").disabled = true;
+        $("sync").textContent = "Syncing...";
+      }
+      try {
+        const n = await syncNow();
+        flushFailed = false;
+        if (n) say(`Synced ${n} highlight${n === 1 ? "" : "s"}.`);
+      } catch (e) {
+        flushFailed = true;
+        // Whatever went wrong is about the queue, so show the queue.
+        $("highlights").open = true;
+        say("Highlights: " + e.message, "error");
+      }
+      await refreshHighlights();
+      await repaintBadge();
+    };
+
+    $("sync").addEventListener("click", () => {
+      say("Syncing...");
+      return flushNow();
+    });
+
+    if (access_token) await flushNow();
+    else await refreshHighlights();
+
     if (!access_token) return;
     await loadPicker("");
 
