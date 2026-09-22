@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>SlipClip for Notion — clip the page, not the page furniture</title>
-<meta name="description" content="A Firefox and Chrome extension that reads the article and files clean Markdown into Notion. Skips nav, comments and recommendations. Signs in with Notion — no integration token to paste, no server in the middle.">
+<meta name="description" content="Clip any article into Notion as clean Markdown — no nav, no comments, no recommendation rail. Sign in with Notion: no token to paste, no server in between.">
 <link rel="canonical" href="https://slipclip.todorx.dev/">
 <meta name="robots" content="index, follow">
 <link rel="sitemap" type="application/xml" href="/sitemap.xml">
@@ -13,7 +13,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://slipclip.todorx.dev/">
 <meta property="og:site_name" content="SlipClip">
-<meta property="og:locale" content="en">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="SlipClip for Notion">
 <meta property="og:description" content="Clip the article, not the page furniture. Clean Markdown into any Notion page or database.">
 <meta property="og:image" content="https://slipclip.todorx.dev/og.png">
@@ -61,6 +61,62 @@
     "name": "SlipClip",
     "url": "https://slipclip.todorx.dev/"
   }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does SlipClip work in Chrome?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. One codebase runs on both browsers. Firefox 140 or later installs in a click from addons.mozilla.org; Chrome 120 or later works today by loading the source unpacked, as there is no Chrome Web Store listing yet."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need a Notion integration token?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. You sign in with Notion and choose which pages to share on its own consent screen. There is no token to create, copy or paste, and no setup step before the first clip."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What ends up in Notion?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Clean Markdown. The article body with its site, author and date, or a video's channel, date and description, or an index page's links — whichever the page turns out to be. Tables, strikethrough and task lists survive the trip."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I save several passages from one article?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "That is what highlights are for. Select text and use the context menu or Alt+Shift+H; they collect on your device while you read and go to Notion the next time you open the popup."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Where do highlights end up?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Wherever you point them in Settings. A database gets one row per passage with source, link and date in their own columns; an existing page gets them appended as quotes, grouped by source."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Free, and open source under the MIT licence. There is no account, no paid tier and no server of ours for there to be a bill for."
+      }
+    }
+  ]
 }
 </script>
 </head>
@@ -220,6 +276,21 @@ What the talk covers…</pre>
 </section>
 
 </main>
+
+<section id="questions" class="wrap">
+  <div class="section-head reveal">
+    <span class="eyebrow">Questions</span>
+    <h2>The ones people actually ask.</h2>
+  </div>
+  <div class="plain">
+    <div class="reveal"><h3>Does SlipClip work in Chrome?</h3><p>Yes. One codebase runs on both browsers. Firefox 140 or later installs in a click from addons.mozilla.org; Chrome 120 or later works today by loading the source unpacked, as there is no Chrome Web Store listing yet.</p></div>
+    <div class="reveal"><h3>Do I need a Notion integration token?</h3><p>No. You sign in with Notion and choose which pages to share on its own consent screen. There is no token to create, copy or paste, and no setup step before the first clip.</p></div>
+    <div class="reveal"><h3>What ends up in Notion?</h3><p>Clean Markdown. The article body with its site, author and date, or a video's channel, date and description, or an index page's links — whichever the page turns out to be. Tables, strikethrough and task lists survive the trip.</p></div>
+    <div class="reveal"><h3>Can I save several passages from one article?</h3><p>That is what highlights are for. Select text and use the context menu or Alt+Shift+H; they collect on your device while you read and go to Notion the next time you open the popup.</p></div>
+    <div class="reveal"><h3>Where do highlights end up?</h3><p>Wherever you point them in Settings. A database gets one row per passage with source, link and date in their own columns; an existing page gets them appended as quotes, grouped by source.</p></div>
+    <div class="reveal"><h3>Is it free?</h3><p>Free, and open source under the MIT licence. There is no account, no paid tier and no server of ours for there to be a bill for.</p></div>
+  </div>
+</section>
 
 <footer>
   <div class="wrap foot">
