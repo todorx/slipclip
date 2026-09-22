@@ -32,7 +32,7 @@ function startSignIn() {
   return pending;
 }
 
-browser.runtime.onMessage.addListener((msg) => {
+function handle(msg) {
   switch (msg?.type) {
     case "signin":
       return startSignIn();
@@ -46,6 +46,17 @@ browser.runtime.onMessage.addListener((msg) => {
     case "repaint-badge":
       return paintBadge().then(() => ({ ok: true }));
   }
+  return null;
+}
+
+// Chrome does not support returning a promise from onMessage (crbug 1185241):
+// the sender's sendMessage resolves with undefined, so every mcpTool() call
+// would see "Not connected". sendResponse + `return true` works in both.
+browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  const reply = handle(msg);
+  if (!reply) return false;
+  reply.then(sendResponse, (e) => sendResponse({ ok: false, error: e.message }));
+  return true;
 });
 
 // ---------- highlight capture ----------
@@ -56,17 +67,22 @@ browser.runtime.onMessage.addListener((msg) => {
 
 const MENU_ID = "slipclip-highlight";
 
-// A menu survives a worker restart, but reloading during development would
-// duplicate it, so start from empty every install.
-browser.runtime.onInstalled.addListener(async () => {
-  await browser.contextMenus.removeAll();
-  browser.contextMenus.create({
-    id: MENU_ID,
-    title: "Save highlight to SlipClip",
-    // Registered for selections only, so this path can never fire empty.
-    contexts: ["selection"]
+// Firefox for Android has neither contextMenus nor commands, so both triggers
+// are registered behind a check - touching a missing namespace at top level
+// throws and takes the whole worker, and with it sign-in, down with it.
+if (browser.contextMenus) {
+  // A menu survives a worker restart, but reloading during development would
+  // duplicate it, so start from empty every install.
+  browser.runtime.onInstalled.addListener(async () => {
+    await browser.contextMenus.removeAll();
+    browser.contextMenus.create({
+      id: MENU_ID,
+      title: "Save highlight to SlipClip",
+      // Registered for selections only, so this path can never fire empty.
+      contexts: ["selection"]
+    });
   });
-});
+}
 
 // Capture has no UI, so the badge is the only feedback there is.
 async function paintBadge() {
@@ -113,7 +129,7 @@ function capture(input) {
   return queue;
 }
 
-browser.contextMenus.onClicked.addListener((info, tab) => {
+browser.contextMenus?.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== MENU_ID) return;
   // The click data carries both of these, so this path needs no activeTab grant
   // and no injection - which is why it still works where the browser blocks
@@ -122,7 +138,7 @@ browser.contextMenus.onClicked.addListener((info, tab) => {
     .catch((e) => console.error("highlight capture failed:", e));
 });
 
-browser.commands.onCommand.addListener(async (name, tab) => {
+browser.commands?.onCommand.addListener(async (name, tab) => {
   if (name !== "save-highlight" || !tab?.id) return;
   try {
     // Self-contained: executeScript serialises this function's source.
