@@ -27,4 +27,5 @@ SlipClip — Firefox + Chrome extension (`notion-clipper-source/`) + static site
 
 - Pushes to `main` touching `notion-clipper-site/` publish to GitHub Pages; manual run via Actions tab. Requires repo setting Pages → Source: **GitHub Actions** (not branch deploy) + custom domain `slipclip.todorx.dev` with Enforce HTTPS.
 - `notion-clipper-site/CNAME` must keep the hostname or redeploys drop the domain. `.nojekyll` is required for asset passthrough.
+- Cloudflare fronts the site and serves CSS/JS with `max-age=14400` while HTML gets `max-age=600`. A stylesheet change therefore reaches nobody for four hours unless its URL changes, which is why `style.css`, `fonts.css` and `app.js` are linked with a `?v=YYYYMMDD` stamp. **Bump that stamp in `index.html`, `privacy.html` and `404.html` whenever you edit one of those three files.** The `.woff2` files stay unversioned so the `preload` keeps matching the `@font-face` `src`.
 - `dist/` (`*.xpi`, `web-ext-artifacts/`) is gitignored build output — never commit it.
