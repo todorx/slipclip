@@ -113,12 +113,30 @@ export function applyMapping(highlight, mapping) {
 // schema to one column and writes a partial row rather than failing.
 const COLUMN = /(?:^|[(,])\s*"([^"]+)"\s+(TITLE|RICH_TEXT|DATE|URL|EMAIL|PHONE_NUMBER|STATUS|FILES|PEOPLE|CHECKBOX|NUMBER|SELECT|MULTI_SELECT|UNIQUE_ID|CREATED_TIME|LAST_EDITED_TIME|FORMULA|RELATION|ROLLUP)\b/g;
 
-// notion-fetch reports a database's columns as a CREATE TABLE block, on one line
-// or on several. Columns carry quoted names; anything else on the line is
-// ignored.
+// notion-fetch describes a database's columns as JSON inside <data-source-state>,
+// with lowercase types and select options. notion-create-database echoes the
+// CREATE TABLE it was given instead, on one line or on several. Both read into
+// the same { name, TYPE } shape.
 export function parseProperties(raw) {
+  const text = unwrapPayload(raw);
+
+  // ponytail: the first data source only - the same one parseDataSourceId
+  // picks. A multi-source database needs a source picker before it needs more.
+  const state = /<data-source-state>\s*([\s\S]*?)\s*<\/data-source-state>/.exec(text);
+  if (state) {
+    try {
+      return Object.values(JSON.parse(state[1]).schema || {}).map((p) => ({
+        name: p.name,
+        type: String(p.type).toUpperCase(),
+        ...(Array.isArray(p.options) && {
+          options: p.options.filter((o) => o?.name).map((o) => ({ name: o.name, color: o.color || "default" }))
+        })
+      }));
+    } catch { /* not JSON after all; fall through to the CREATE TABLE form */ }
+  }
+
   const out = [];
-  for (const line of unwrapPayload(raw).split("\n")) {
+  for (const line of text.split("\n")) {
     for (const m of line.matchAll(COLUMN)) {
       if (!out.some((p) => p.name === m[1])) out.push({ name: m[1], type: m[2] });
     }
@@ -181,10 +199,11 @@ const FIELD_RULES = [
   ["note",    (p) => p.type === "RICH_TEXT", /note|comment|thought/i,              false]
 ];
 
-export function matchProperties(properties) {
+// A clip fills different fields from the same columns, so it brings its own rules.
+export function matchProperties(properties, rules = FIELD_RULES) {
   const mapping = {};
   const taken = new Set();
-  for (const [field, byType, byName, guess] of FIELD_RULES) {
+  for (const [field, byType, byName, guess] of rules) {
     const pool = properties.filter((p) => !taken.has(p.name) && byType(p));
     const pick = pool.find((p) => byName.test(p.name)) || (guess ? pool[0] : null);
     if (!pick) continue;

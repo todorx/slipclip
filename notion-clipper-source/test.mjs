@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./auth.js";
 import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
-import { buildMarkdown, optionLabel, parseChildDatabases, formatDuration } from "./popup.js";
+import { optionLabel, parseChildDatabases, togglePin } from "./popup.js";
+import { buildMarkdown, formatDuration, clipProperties, tagsColumn, notionLink, rememberClip, findClip, noteCallout, addTagsStatement } from "./clip.js";
 import { extractPage } from "./extract.js";
 import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightsMarkdown, coalesce, flushPending, readHighlights, writeHighlights } from "./highlights.js";
 
@@ -132,6 +133,12 @@ const bare = buildMarkdown({ url: "https://example.com/a", title: "Example", des
 assert.match(bare, /https:\/\/example\.com\/a/, "URL survives with nothing else to say");
 assert.ok(!bare.includes(">"), "no empty quote block when there is no selection");
 assert.ok(!/\n\n\n/.test(bare), "no stacked blank lines from skipped sections");
+assert.ok(!bare.includes("<callout"), "no note, no callout");
+
+// A note sits in a callout above the content, one block however many lines.
+const noted = buildMarkdown({ url: "https://example.com/a", title: "Example", body: "Body.", note: "Line one\nsee <b>this</b>" });
+assert.match(noted, /\n\n<callout icon="💬">\n\tLine one<br>see \\<b\\>this\\<\/b\\>\n<\/callout>\n\nBody\./, "the note is escaped and kept as one block");
+assert.equal(noteCallout("  hi  "), '<callout icon="💬">\n\thi\n</callout>', "surrounding space is trimmed");
 
 // Real payloads: notion-list-recent-pages has no `id`, notion-search does.
 const recent = parseResults(JSON.stringify({
@@ -309,6 +316,142 @@ assert.equal(matched.note.name, "Note");
 const plain = matchProperties(parseProperties(JSON.stringify({ text: 'CREATE TABLE ("Name" TITLE)' })));
 assert.equal(plain.text.name, "Name", "an unrecognised title property is still the passage target");
 
+// Real notion-fetch payload for a database, ids swapped: the columns arrive as
+// JSON in <data-source-state>, not as a typed CREATE TABLE. The SQLite block
+// beside it types every column TEXT, which says nothing about which is which.
+const fetchedDatabase = JSON.stringify({
+  metadata: { type: "database" },
+  title: "Reading List",
+  text: '<database url="{{https://app.notion.com/p/33333333333343338333333333333333}}" inline="false">\n'
+    + "The title of this Database is: Reading List\n<data-sources>\n"
+    + '<data-source url="{{collection://55555555-5555-4555-8555-555555555555}}">\n'
+    + "<data-source-state>\n"
+    + JSON.stringify({ name: "Reading List", schema: {
+      Created: { name: "Created", type: "created_time" },
+      Name: { name: "Name", type: "title" },
+      Tags: { name: "Tags", options: [{ name: "design", color: "blue" }, { name: "ai", color: "red" }], type: "multi_select" },
+      "userDefined:URL": { name: "URL", type: "url" }
+    }, url: "collection://55555555-5555-4555-8555-555555555555" })
+    + "\n</data-source-state>\n<sqlite-table>\n"
+    + 'CREATE TABLE IF NOT EXISTS "collection://55555555-5555-4555-8555-555555555555" (\n'
+    + '\turl TEXT UNIQUE,\n\t"Created" TEXT NOT NULL,\n\t"userDefined:URL" TEXT,\n\t"Tags" TEXT, -- JSON array with zero or more of ["design","ai"]\n\t"Name" TEXT\n)\n'
+    + "</sqlite-table>\n</data-source>\n</data-sources>\n</database>"
+});
+const readingList = parseProperties(fetchedDatabase);
+assert.deepEqual(
+  readingList.map((p) => `${p.name}:${p.type}`).sort(),
+  ["Created:CREATED_TIME", "Name:TITLE", "Tags:MULTI_SELECT", "URL:URL"],
+  "the real fetch payload yields every column, typed"
+);
+assert.equal(parseDataSourceId(fetchedDatabase), "55555555-5555-4555-8555-555555555555", "and its data source");
+assert.equal(matchProperties(readingList).url.name, "URL", "highlights can map a real database too");
+
+// A clip into a database fills its columns, not just the title.
+const clipped = { title: "An Article", url: "https://example.com/a", author: "Ann", siteName: "Example", published: "2026-09-01" };
+assert.deepEqual(
+  clipProperties(clipped, readingList, { tags: ["design", "new one"] }),
+  { Name: "An Article", "userDefined:URL": "https://example.com/a", Tags: '["design","new one"]' },
+  "title, link and tags go to their columns; URL gets its prefix"
+);
+assert.deepEqual(
+  clipProperties(clipped, readingList),
+  { Name: "An Article", "userDefined:URL": "https://example.com/a" },
+  "no tags chosen writes no tags"
+);
+assert.deepEqual(
+  clipProperties(clipped, []),
+  { title: "An Article" },
+  "unreadable columns still leave the title alias"
+);
+
+const richer = parseProperties('CREATE TABLE ("Title" TITLE, "Link" URL, "Author" RICH_TEXT, "Publication" RICH_TEXT, "Published" DATE, "Date added" DATE, "My notes" RICH_TEXT)');
+assert.deepEqual(
+  clipProperties({ ...clipped, note: "Read twice." }, richer),
+  {
+    Title: "An Article",
+    Link: "https://example.com/a",
+    Author: "Ann",
+    Publication: "Example",
+    "My notes": "Read twice.",
+    "date:Published:start": "2026-09-01",
+    "date:Published:is_datetime": 0
+  },
+  "author, site, note and publication date fill columns named for them"
+);
+assert.ok(
+  !("date:Date added:start" in clipProperties(clipped, parseProperties('CREATE TABLE ("Name" TITLE, "Date added" DATE)'))),
+  "a date column not named for publication is left alone"
+);
+
+const tagCol = tagsColumn(readingList);
+assert.deepEqual(
+  tagCol,
+  { name: "Tags", type: "MULTI_SELECT", options: [{ name: "design", color: "blue" }, { name: "ai", color: "red" }] },
+  "the tags column carries its options and their colors"
+);
+assert.equal(tagsColumn(parseProperties('CREATE TABLE ("Name" TITLE)')), null, "no multi-select, no tags");
+
+// Notion refuses an option the column lacks, so new ones are added first - and
+// since SET replaces the list, every existing option must be restated.
+assert.equal(addTagsStatement(tagCol, ["design"]), "", "known tags need no schema change");
+assert.equal(
+  addTagsStatement(tagCol, ["design", "it's new", "it's new"]),
+  `ALTER COLUMN "Tags" SET MULTI_SELECT('design':blue, 'ai':red, 'it''s new':default)`,
+  "existing options keep their colors, the new one is added once, quotes are doubled"
+);
+assert.equal(
+  addTagsStatement({ name: "Tags", type: "MULTI_SELECT" }, ["x"]),
+  "",
+  "with no known option list nothing is restated - an empty list would wipe every row's tags"
+);
+
+// Where a clip landed. The first case is Notion's real answer.
+assert.equal(
+  notionLink('{"pages":[{"id":"3f4542df-8f34-81c7-8048-ec76dd8aed94","url":"https://app.notion.com/p/3f4542df8f3481c78048ec76dd8aed94?pvs=204","properties":{"Name":"SlipClip test","Tags":["slipclip-test"]}}]}', "x"),
+  "https://app.notion.com/p/3f4542df8f3481c78048ec76dd8aed94?pvs=204",
+  "a real create-pages answer yields the new page"
+);
+assert.equal(
+  notionLink(JSON.stringify({ pages: [{ id: "11111111-1111-4111-8111-111111111111", url: "https://app.notion.com/p/11111111111141118111111111111111" }] }), "x"),
+  "https://app.notion.com/p/11111111111141118111111111111111",
+  "the new page's own url"
+);
+assert.equal(
+  notionLink(JSON.stringify({ pages: [{ id: "11111111-1111-4111-8111-111111111111" }] }), "x"),
+  "https://www.notion.so/11111111111141118111111111111111",
+  "or one built from its id"
+);
+assert.equal(
+  notionLink("", "22222222-2222-4222-8222-222222222222"),
+  "https://www.notion.so/22222222222242228222222222222222",
+  "an append links to the destination"
+);
+assert.equal(
+  notionLink('<page url="https://app.notion.com/p/abc">', null),
+  "https://app.notion.com/p/abc",
+  "markup answers yield the link inside them"
+);
+
+// Clip history: one row per page, newest first, tracking params ignored.
+let clips = rememberClip([], "https://example.com/a?utm_source=x", "https://notion.so/1", 1);
+clips = rememberClip(clips, "https://example.com/b", "https://notion.so/2", 2);
+clips = rememberClip(clips, "https://www.example.com/a", "https://notion.so/3", 3);
+assert.equal(clips.length, 2, "clipping a page again replaces its row");
+assert.equal(clips[0].link, "https://notion.so/3", "and moves it to the front");
+assert.equal(findClip(clips, "https://example.com/a#top").link, "https://notion.so/3", "found however the link is decorated");
+assert.equal(findClip(clips, "https://example.com/c"), null);
+assert.equal(
+  Array.from({ length: 600 }, (_, i) => i).reduce((l, i) => rememberClip(l, `https://example.com/${i}`, "x"), []).length,
+  500,
+  "history is capped"
+);
+
+// Pins toggle.
+let pins = togglePin([], { id: "a", title: "A" });
+pins = togglePin(pins, { id: "b", title: "B" });
+assert.deepEqual(pins.map((p) => p.id), ["a", "b"], "pins keep the order they were added in");
+assert.deepEqual(togglePin(pins, { id: "a" }).map((p) => p.id), ["b"], "pinning again unpins");
+
 // Storage round-trip. readHighlights must survive junk in the slot.
 const hStore = {};
 globalThis.browser = { storage: { local: {
@@ -456,6 +599,19 @@ const scraped = extractPage();
 
 assert.ok(gfmApplied, "the GFM extensions are applied to the converter");
 assert.ok(scraped.body.length >= 600, "the converted body survives the index-page check");
+assert.equal(scraped.image, "", "no og:image, no cover - not the page's own address");
+assert.equal(scraped.icon, "", "no declared icon, no icon");
+
+// With metadata, a relative cover resolves and a data: icon is dropped.
+const realQuery = globalThis.document.querySelector;
+globalThis.document.querySelector = (sel) =>
+  sel === 'meta[property="og:image"]' ? { content: "/img/cover.png" }
+  : sel.startsWith("link[rel") ? { getAttribute: () => "data:image/png;base64,AAAA" }
+  : null;
+const dressed = extractPage();
+assert.equal(dressed.image, "https://example.com/img/cover.png", "a relative og:image resolves against the page");
+assert.equal(dressed.icon, "", "a data: icon is not something Notion can show");
+globalThis.document.querySelector = realQuery;
 
 const img = (attrs) => ({ getAttribute: (name) => attrs[name] ?? null });
 const image = fakeService.rules.lazyImage;

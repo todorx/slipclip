@@ -38,6 +38,16 @@ export function extractPage() {
 
   const nameOf = (value) => (typeof value === "string" ? value : value?.name || "");
 
+  // Notion takes a cover or an icon only as an external http(s) address, so a
+  // relative path is resolved and anything else - data: placeholders - dropped.
+  const absolute = (src) => {
+    if (!src) return "";
+    try {
+      const u = new URL(src, location.href);
+      return /^https?:$/.test(u.protocol) ? u.href : "";
+    } catch { return ""; }
+  };
+
   const page = {
     url: location.href,
     title: (meta("og:title") || micro("name") || document.title || "").trim(),
@@ -47,6 +57,8 @@ export function extractPage() {
     published: (video?.uploadDate || article?.datePublished || micro("uploadDate") || meta("article:published_time") || "").slice(0, 10),
     duration: (typeof video?.duration === "string" ? video.duration : "") || micro("duration"),
     selection: (getSelection()?.toString().trim() || "").slice(0, 10000),
+    image: absolute(meta("og:image") || meta("twitter:image")),
+    icon: absolute(document.querySelector('link[rel="apple-touch-icon"], link[rel~="icon"]')?.getAttribute("href")),
     kind,
     body: "",
     truncated: false
