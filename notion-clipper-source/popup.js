@@ -1,14 +1,24 @@
-import { extractPage } from "./extract.js";
-
 import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
-import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping, highlightsMarkdown, quoteLines } from "./highlights.js";
+import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping, highlightsMarkdown, parseProperties } from "./highlights.js";
+import { clipTo, readDestination, tagsColumn, readClips, findClip } from "./clip.js";
 
 const $ = (id) => document.getElementById(id);
 
 // One place to write the status line, so its tone stays in sync with its text.
-function say(text, tone = "") {
+// A link, when there is one, is where the thing just said can be seen.
+function say(text, tone = "", link = "") {
   $("status").textContent = text;
   $("status").dataset.tone = tone;
+  // With tags showing, the popup outgrows its 600px cap and the line can sit
+  // just under the fold.
+  if (text) $("status").scrollIntoView({ block: "nearest" });
+  if (!link) return;
+  const a = document.createElement("a");
+  a.href = link;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = "Open in Notion";
+  $("status").append(" ", a);
 }
 
 // ---------- pure helpers (imported by test.mjs) ----------
@@ -36,40 +46,11 @@ export function optionLabel({ title, type }) {
   return type === "page" ? short : `${short} (${type || "unknown"})`;
 }
 
-// ISO 8601 duration to clock time, for the facts line.
-export function formatDuration(iso) {
-  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(iso || "");
-  if (!m) return "";
-  const [, d, h, min, s] = m.map((v) => Number(v) || 0);
-  const total = ((d * 24 + h) * 60 + min) * 60 + s;
-  if (!total) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  const hours = Math.floor(total / 3600);
-  return hours
-    ? `${hours}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`
-    : `${Math.floor(total / 60)}:${pad(total % 60)}`;
-}
-
-// `heading` turns the source line into an H2 - appended clips need a visible
-// break between them, a new page does not.
-export function buildMarkdown(page, { heading = false } = {}) {
-  const { url, title, description, selection, siteName, author, published, duration, body, truncated, kind } = page;
-  const link = title ? `[${title.replace(/[[\]]/g, "\\$&")}](${url})` : url;
-  const facts = [siteName, author, published, formatDuration(duration)].filter(Boolean).join(" · ");
-
-  // The passage you chose, or an index's blurb plus its links, or the article,
-  // or - when there is no body at all - the summary.
-  let meat;
-  if (selection) meat = quoteLines(selection);
-  else if (kind === "index") meat = [description, body].filter(Boolean).join("\n\n");
-  else meat = body || description;
-
-  return [
-    heading ? `## ${link}` : link,
-    facts && `*${facts}*`,
-    meat,
-    truncated && !selection && "*Article truncated.*"
-  ].filter(Boolean).join("\n\n");
+// Pinned destinations sit above whatever the list or a search shows.
+export function togglePin(pinned, item) {
+  return pinned.some((p) => p.id === item.id)
+    ? pinned.filter((p) => p.id !== item.id)
+    : [...pinned, item];
 }
 
 // ---------- destination picker ----------
@@ -85,11 +66,14 @@ function setOptions(labels) {
 }
 
 let listed = [];
+let pinned = [];
 
 function renderPicker(selectedId) {
+  const pinnedIds = new Set(pinned.map((p) => p.id));
   setOptions([
-    [listed.length ? "Pick a destination" : "No results", ""],
-    ...listed.map((it) => [(it.inside ? "↳ " : "") + optionLabel(it), it.id, it.type])
+    [listed.length || pinned.length ? "Pick a destination" : "No results", ""],
+    ...pinned.map((it) => ["★ " + optionLabel(it), it.id, it.type]),
+    ...listed.filter((it) => !pinnedIds.has(it.id)).map((it) => [(it.inside ? "↳ " : "") + optionLabel(it), it.id, it.type])
   ]);
   if (selectedId) $("picker").value = selectedId;
 }
@@ -103,11 +87,69 @@ async function loadPicker(query) {
     listed = parseResults(text);
     renderPicker();
   } catch (e) {
+    // Pins are stored locally, so they stay usable when the list cannot load.
     listed = [];
-    setOptions([["Could not load pages", ""]]);
+    renderPicker();
     say("Error: " + e.message, "error");
   }
 }
+
+const currentId = () => normalizeId($("parent").value);
+
+function paintPin() {
+  const on = pinned.some((p) => p.id === currentId());
+  $("pin").setAttribute("aria-pressed", String(on));
+  $("pin").textContent = on ? "★" : "☆";
+  $("pin").title = on ? "Unpin this destination" : "Pin this destination";
+}
+
+async function pinCurrent() {
+  const id = currentId();
+  if (!id) return say("Pick a destination to pin first.");
+  const known = [...pinned, ...listed].find((it) => it.id === id);
+  // A pasted link has no title until Notion is asked for one.
+  let title = known?.title;
+  if (!title && !pinned.some((p) => p.id === id)) {
+    try { title = JSON.parse(await readDestination(id))?.title; } catch { /* the label falls back to Untitled */ }
+  }
+  pinned = togglePin(pinned, { id, title: title || "", type: $("parent").dataset.type || known?.type || "" });
+  await browser.storage.local.set({ pinned });
+  renderPicker(id);
+  paintPin();
+}
+
+// Tags are offered only where there is a tags column to put them in.
+async function showTags() {
+  $("tagbox").hidden = true;
+  const id = currentId();
+  if (!id || $("parent").dataset.type !== "database") return;
+  try {
+    const column = tagsColumn(parseProperties(await readDestination(id)));
+    // The destination may have changed while Notion was answering.
+    if (!column || currentId() !== id) return;
+    $("taglab").textContent = column.name;
+    $("tagopts").replaceChildren(...(column.options || []).map(({ name }) => {
+      const chip = document.createElement("label");
+      chip.className = "chip";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = name;
+      const text = document.createElement("span");
+      text.textContent = name;
+      chip.append(box, text);
+      return chip;
+    }));
+    $("newtags").value = "";
+    $("tagbox").hidden = false;
+  } catch (e) {
+    console.debug("could not read the destination's columns:", e);
+  }
+}
+
+const selectedTags = () => $("tagbox").hidden ? [] : [...new Set([
+  ...[...$("tagopts").querySelectorAll("input:checked")].map((box) => box.value),
+  ...$("newtags").value.split(",").map((t) => t.trim()).filter(Boolean)
+])];
 
 // Picking a page reveals the databases living inside it, indented beneath it.
 async function expandPage(id) {
@@ -136,64 +178,34 @@ async function expandPage(id) {
 
 // ---------- clipping ----------
 
-async function getTabData() {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error("No active tab to clip.");
-  const target = { tabId: tab.id };
-
-  // Firefox refuses injection on about:*, view-source: and addons.mozilla.org,
-  // and answers with an empty array rather than an error.
-  let injected = [];
-  try {
-    // Same isolated world both times, so extractPage sees these as globals.
-    await browser.scripting.executeScript({ target, files: ["vendor/Readability.js", "vendor/turndown.js", "vendor/turndown-plugin-gfm.js"] });
-    injected = await browser.scripting.executeScript({ target, func: extractPage });
-  } catch { injected = []; }
-
-  const data = injected?.[0]?.result;
-  if (!data) throw new Error("Can't read this page. Browsers block extensions on browser pages such as about:debugging or chrome://extensions - switch to a normal web page and clip that.");
-  return data;
-}
-
-const createPage = (parentId, kind, pages) =>
-  mcpTool("notion-create-pages", {
-    parent: kind === "database" ? { database_id: parentId } : { page_id: parentId },
-    pages
-  });
+const activeTab = async () => (await browser.tabs.query({ active: true, currentWindow: true }))[0];
 
 async function clip() {
-  const parentId = normalizeId($("parent").value);
+  const parentId = currentId();
   if (!parentId) throw new Error("Pick a destination, or paste a Notion link.");
-  const known = $("parent").dataset.type;
+  const known = $("parent").dataset.type || "";
+  await browser.storage.local.set({ parent: $("parent").value, parentType: known });
+
+  const tab = await activeTab();
+  if (!tab?.id) throw new Error("No active tab to clip.");
   const mode = $("mode").disabled ? "child" : $("mode").value;
-  await browser.storage.local.set({ parent: $("parent").value, parentType: known || "" });
+  const { link, kind } = await clipTo(tab.id, {
+    parentId,
+    known,
+    mode,
+    title: $("title").value,
+    note: $("note").value,
+    tags: selectedTags()
+  });
 
-  const tab = await getTabData();
-  const title = ($("title").value.trim() || tab.title || "Untitled clip").slice(0, 100);
-
-  if (mode === "append") {
-    // allow_async defaults true here, which would answer with a task instead of
-    // a result. A clip is small enough to just wait for.
-    const text = await mcpTool("notion-update-page", {
-      page_id: parentId,
-      command: "insert_content",
-      content: buildMarkdown({ ...tab, title }, { heading: true }),
-      position: { type: "end" },
-      allow_async: false
-    });
-    return text || "Appended to the page.";
+  // A pasted link is settled now, so the next open knows what it points at.
+  if (kind && kind !== known) {
+    $("parent").dataset.type = kind;
+    syncMode();
+    await browser.storage.local.set({ parentType: kind });
+    showTags();
   }
-
-  const pages = [{ properties: { title }, content: buildMarkdown({ ...tab, title }) }];
-
-  try {
-    return await createPage(parentId, known || "page", pages) || "Clipped to Notion.";
-  } catch (e) {
-    // A pasted link doesn't say which kind it is. Notion's error does, so one
-    // retry beats making the user classify it.
-    if (known || !/not a (page|database)/i.test(e.message)) throw e;
-    return await createPage(parentId, "database", pages) || "Clipped to Notion.";
-  }
+  return { link, mode };
 }
 
 // ---------- highlights ----------
@@ -342,6 +354,8 @@ if (typeof browser !== "undefined") {
     $("parent").value = opt.value;
     $("parent").dataset.type = opt.dataset.type || "";
     syncMode();
+    paintPin();
+    showTags();
     if (opt.dataset.type === "page") expandPage(opt.value);
   });
 
@@ -349,6 +363,12 @@ if (typeof browser !== "undefined") {
   $("parent").addEventListener("input", () => {
     $("parent").dataset.type = "";
     syncMode();
+    paintPin();
+    $("tagbox").hidden = true;
+  });
+
+  $("pin").addEventListener("click", () => {
+    pinCurrent().catch((e) => say("Error: " + e.message, "error"));
   });
 
   let searchTimer;
@@ -359,18 +379,38 @@ if (typeof browser !== "undefined") {
 
   $("clip").addEventListener("click", async () => {
     say("Clipping...");
-    try { say("Done: " + await clip()); }
-    catch (e) { say("Error: " + e.message, "error"); }
+    try {
+      const { link, mode } = await clip();
+      say(mode === "append" ? "Added to the end of the page." : "Clipped.", "", link);
+      $("clip").textContent = "Clip again";
+    } catch (e) { say("Error: " + e.message, "error"); }
   });
 
   $("openoptions").addEventListener("click", () => browser.runtime.openOptionsPage());
 
   (async () => {
-    const s = await browser.storage.local.get(["parent", "parentType"]);
+    const s = await browser.storage.local.get(["parent", "parentType", "pinned", "clip_error"]);
     if (s.parent) $("parent").value = s.parent;
     if (s.parentType) $("parent").dataset.type = s.parentType;
+    pinned = Array.isArray(s.pinned) ? s.pinned : [];
     syncMode();
+    paintPin();
     await paint();
+
+    // Seen before: say so, and where it went, before anyone clips it twice.
+    const tab = await activeTab().catch(() => null);
+    const seen = tab?.url && findClip(await readClips(), tab.url);
+    if (seen) {
+      $("clip").textContent = "Clip again";
+      say(`Already clipped on ${new Date(seen.at).toLocaleDateString()}.`, "", seen.link);
+    }
+
+    // The shortcut and the context menu have no surface of their own, so a
+    // failure there is reported here, once.
+    if (s.clip_error) {
+      say("Last quick clip failed: " + s.clip_error, "error");
+      await browser.storage.local.remove("clip_error");
+    }
 
     const { access_token } = await browser.storage.local.get("access_token");
 
@@ -410,6 +450,7 @@ if (typeof browser !== "undefined") {
     else await refreshHighlights();
 
     if (!access_token) return;
+    showTags();
     await loadPicker("");
 
     // Reopening on a remembered page: surface its inline databases without

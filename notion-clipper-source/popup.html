@@ -98,7 +98,7 @@ label { display: block; margin-bottom: 12px; }
   color: var(--muted);
 }
 
-input, select {
+input, select, textarea {
   width: 100%;
   padding: 8px 10px;
   font: inherit;
@@ -110,9 +110,11 @@ input, select {
   transition: border-color .15s, background .15s;
 }
 
-input::placeholder { color: var(--muted); }
+input::placeholder, textarea::placeholder { color: var(--muted); }
 
-input:focus-visible, select:focus-visible {
+textarea { display: block; resize: vertical; }
+
+input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: none;
   background: var(--paper);
   border-color: var(--ink);
@@ -126,6 +128,66 @@ select {
 }
 
 select:disabled { opacity: .45; }
+
+.field { margin-bottom: 12px; }
+
+.pickrow { display: flex; gap: 6px; }
+
+#pin {
+  flex: none;
+  width: 36px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--muted);
+  background: var(--sunk);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+
+#pin:hover { color: var(--ink); }
+#pin:focus-visible { outline: none; border-color: var(--ink); }
+#pin[aria-pressed="true"] { color: var(--mark); }
+
+/* Tag chips are real checkboxes, hidden but still focusable, so the keyboard
+   and screen readers get them for free. The new-tag field wraps in after them,
+   which keeps the clip button inside a popup's 600px. */
+.tagrow { display: flex; flex-wrap: wrap; gap: 5px; }
+#tagopts { display: contents; }
+
+#newtags {
+  flex: 1 1 140px;
+  width: auto;
+  padding: 3px 9px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.chip { position: relative; margin: 0; }
+
+.chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  opacity: 0;
+}
+
+.chip span {
+  display: inline-block;
+  padding: 3px 9px;
+  font-size: 12px;
+  background: var(--sunk);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip input:checked + span { color: #1b1b19; background: var(--mark); border-color: transparent; }
+.chip input:focus-visible + span { border-color: var(--ink); }
+
+#status a { color: var(--ink); }
 
 /* Dashed: this is the fallback route, not a peer of the dropdown. */
 #parent {
@@ -281,10 +343,13 @@ select:disabled { opacity: .45; }
   <input id="q" placeholder="Find a page, or leave blank">
 </label>
 
-<label>
-  <span class="lab">Destination</span>
-  <select id="picker"><option value="">Connect to load pages</option></select>
-</label>
+<div class="field">
+  <label class="lab" for="picker">Destination</label>
+  <div class="pickrow">
+    <select id="picker"><option value="">Connect to load pages</option></select>
+    <button id="pin" type="button" aria-pressed="false" title="Pin this destination">☆</button>
+  </div>
+</div>
 
 <label>
   <span class="lab">Or paste a link</span>
@@ -304,7 +369,22 @@ select:disabled { opacity: .45; }
   <input id="title" placeholder="Defaults to the page title">
 </label>
 
+<div class="field" id="tagbox" role="group" aria-labelledby="taglab" hidden>
+  <span class="lab" id="taglab">Tags</span>
+  <div class="tagrow">
+    <span id="tagopts"></span>
+    <input id="newtags" aria-labelledby="taglab" placeholder="+ new, comma separated">
+  </div>
+</div>
+
+<label>
+  <span class="lab">Note</span>
+  <textarea id="note" rows="1" placeholder="Why it's worth keeping (optional)"></textarea>
+</label>
+
 <button id="clip" disabled>Clip this page</button>
+
+<div id="status" role="status"></div>
 
 <p class="note">Clips reach only the pages you shared on Notion's consent screen.</p>
 
@@ -315,7 +395,6 @@ select:disabled { opacity: .45; }
   <button id="openoptions">Open Settings</button>
 </details>
 
-<div id="status"></div>
 
 <script type="module" src="popup.js"></script>
 </body>

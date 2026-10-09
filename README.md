@@ -30,6 +30,9 @@
 - Smart extraction: articles, YouTube/video pages, index/listing pages, or plain links — picked from JSON-LD / `og:type`.
 - Sign in with Notion, nothing to paste — OAuth 2.1 + PKCE via Notion's hosted MCP server, no backend or secret.
 - Save as new page/row or append to an existing page; inline databases discovered automatically.
+- Database rows come filled in: URL, tags, and author / site / published date / note when the database has columns named for them. Pages get the site's preview image as cover and its icon.
+- Notes, pinned destinations, an "Already clipped" warning with a link to the earlier page, and an **Open in Notion** link after every clip.
+- Quick clip: `Alt+Shift+C` or **Clip to Notion** in the context menu clips straight to the last destination.
 - Highlights: save passages from the context menu or `Alt+Shift+H`, keep them locally, sync them into a Notion database — or append them to an existing page — when the popup opens.
 - No build step, no dependencies. Just load `manifest.json`.
 
@@ -44,6 +47,10 @@
 **How** picks what happens at the destination: *New page inside* creates a child page (or a row, if the destination is a database), *Append to the end* adds the clip to the bottom via `notion-update-page` / `insert_content`. Appending is disabled for databases, which cannot hold loose blocks.
 
 The dropdown loads recent pages on open (`notion-list-recent-pages`); typing searches the workspace (`notion-search`). Selecting a page also lists inline databases inside it, indented with `↳`. Both only ever see pages shared during consent. Pasting a link still works for anything the list misses.
+
+A database destination is read once when you pick it, so the popup can offer its tags as chips (type new ones comma-separated; they are added to the database's tag column for you) and the clip can fill the matching columns. ★ pins the current destination to the top of the list.
+
+**Quick clip** (`Alt+Shift+C`, or **Clip to Notion** in the context menu) skips the popup and clips to wherever you last clipped from it — no note, tags or custom title. The badge shows `…`, then `✓` or `!`; a failure is explained the next time you open the popup. With no destination yet, it opens the popup instead.
 
 **Highlights** accumulate instead of being clipped one at a time. Select text, then use the context menu or `Alt+Shift+H`; the badge counts what is waiting. Nothing is sent while you read — the queue drains into Notion the next time the popup opens, from the **Highlights** disclosure at the bottom of the popup. Pick the destination in **Open Settings**: a database gets one row per passage, a page gets them appended as quotes grouped by source, or let it create a database for you. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
 

@@ -101,11 +101,19 @@ async function callTool(token, sid, name, args) {
   return result;
 }
 
+// The popup and the options page ask the background worker for the token. The
+// worker cannot message itself, so when it clips it hands over its own source.
+let tokenSource = async () => {
+  const auth = await ask("token");
+  if (!auth?.ok) throw new Error(auth?.error || "Not connected.");
+  return auth.token;
+};
+export const useTokenSource = (fn) => { tokenSource = fn; };
+
 // ponytail: one MCP session per tool call. The popup is short-lived, so reusing
 // a session across calls would only pay off in a long-lived page.
 export async function mcpTool(name, args) {
-  const auth = await ask("token");
-  if (!auth?.ok) throw new Error(auth?.error || "Not connected.");
-  const sid = await openSession(auth.token);
-  return textOf(await callTool(auth.token, sid, name, args));
+  const token = await tokenSource();
+  const sid = await openSession(token);
+  return textOf(await callTool(token, sid, name, args));
 }

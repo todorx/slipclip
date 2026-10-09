@@ -1,8 +1,14 @@
 import { signIn, signOut, accessToken, completeSignIn } from "./auth.js";
 import { addHighlight, siteOf, pending as pendingHighlights, readHighlights, writeHighlights } from "./highlights.js";
+import { normalizeId, useTokenSource } from "./mcp.js";
+import { clipTo } from "./clip.js";
 
 if (typeof globalThis.browser === "undefined" && typeof globalThis.chrome !== "undefined")
   globalThis.browser = globalThis.chrome;
+
+// The popup asks this worker for the token; when the worker clips by itself it
+// has the token at hand.
+useTokenSource(accessToken);
 
 // Origin strip lives in rules.json (DNR modifyHeaders) - webRequestBlocking
 // is unavailable in Chrome MV3, so no listener here. Service workers are
@@ -66,6 +72,7 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // shortcut has to work with no popup open at all.
 
 const MENU_ID = "slipclip-highlight";
+const CLIP_MENU_ID = "slipclip-clip";
 
 // Firefox for Android has neither contextMenus nor commands, so both triggers
 // are registered behind a check - touching a missing namespace at top level
@@ -81,6 +88,12 @@ if (browser.contextMenus) {
       // Registered for selections only, so this path can never fire empty.
       contexts: ["selection"]
     });
+    // With a selection this clips just the passage, as the popup would.
+    browser.contextMenus.create({
+      id: CLIP_MENU_ID,
+      title: "Clip to Notion",
+      contexts: ["page", "selection"]
+    });
   });
 }
 
@@ -92,13 +105,15 @@ async function paintBadge() {
 }
 
 // ponytail: a timer, which a worker suspended before it fires would drop - the
-// badge then stays on "!" until the next capture. Swap for an alarm if that
-// ever misleads.
-async function flashEmpty() {
-  await browser.action.setBadgeBackgroundColor({ color: "#c0392b" });
-  await browser.action.setBadgeText({ text: "!" });
+// badge then stays on its flash until the next capture. Swap for an alarm if
+// that ever misleads.
+async function flash(text, color) {
+  await browser.action.setBadgeBackgroundColor({ color });
+  await browser.action.setBadgeText({ text });
   setTimeout(() => paintBadge().catch(() => {}), 1500);
 }
+
+const flashEmpty = () => flash("!", "#c0392b");
 
 async function captureNow({ text, url, title }) {
   const body = String(text || "").replace(/\s+/g, " ").trim();
@@ -129,7 +144,39 @@ function capture(input) {
   return queue;
 }
 
+// ---------- quick clip ----------
+
+// The shortcut and the menu clip straight to the destination the popup last
+// clipped to. With none yet, the popup opens so one can be picked; the badge is
+// the only other feedback, and a failure waits in storage for the next popup.
+async function quickClip(tab) {
+  if (!tab?.id) return;
+  const { parent, parentType } = await browser.storage.local.get(["parent", "parentType"]);
+  const parentId = normalizeId(parent);
+  if (!parentId) {
+    // Firefox only opens a popup inside the user's gesture, which the storage
+    // read above may already have outlived - the note then waits for them.
+    await browser.storage.local.set({ clip_error: "no destination yet. Pick one here and clip once; the shortcut reuses it." });
+    if (browser.action.openPopup) return browser.action.openPopup().catch(() => flashEmpty());
+    return flashEmpty();
+  }
+
+  await browser.action.setBadgeBackgroundColor({ color: "#76766e" });
+  await browser.action.setBadgeText({ text: "…" });
+  try {
+    const { kind } = await clipTo(tab.id, { parentId, known: parentType || "" });
+    if (kind && kind !== parentType) await browser.storage.local.set({ parentType: kind });
+    await browser.storage.local.remove("clip_error");
+    await flash("✓", "#2e7d32");
+  } catch (e) {
+    console.error("quick clip failed:", e);
+    await browser.storage.local.set({ clip_error: e.message });
+    await flashEmpty();
+  }
+}
+
 browser.contextMenus?.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === CLIP_MENU_ID) return void quickClip(tab);
   if (info.menuItemId !== MENU_ID) return;
   // The click data carries both of these, so this path needs no activeTab grant
   // and no injection - which is why it still works where the browser blocks
@@ -139,6 +186,7 @@ browser.contextMenus?.onClicked.addListener((info, tab) => {
 });
 
 browser.commands?.onCommand.addListener(async (name, tab) => {
+  if (name === "clip-page") return quickClip(tab);
   if (name !== "save-highlight" || !tab?.id) return;
   try {
     // Self-contained: executeScript serialises this function's source.

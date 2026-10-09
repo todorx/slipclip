@@ -95,7 +95,14 @@
     <li>Your Notion OAuth access token, refresh token and expiry time.</li>
     <li>The OAuth client identifier your copy of the extension registered with Notion.</li>
     <li>The last destination you clipped to, so the popup can remember it.</li>
-    <li>An error message from the most recent failed sign-in, so it can be shown to you.</li>
+    <li>Destinations you pinned &mdash; their Notion id, title and whether each is a page or
+      a database.</li>
+    <li>The addresses of the last 500 pages you clipped, each with the link to the Notion page
+      it became and when, so the popup can tell you when you are about to clip a page
+      twice.</li>
+    <li>An error message from the most recent failed sign-in, and from the most recent failed
+      clip made with the keyboard shortcut or the right-click menu, so it can be shown to
+      you.</li>
     <li>Highlights you have saved but not yet synced &mdash; the passage itself, the page's
       address and title, the site it came from, and when you saved it. They are held here so
       they survive closing the tab, and each one stays until it reaches Notion or you delete
@@ -115,10 +122,16 @@
     <code>mcp.notion.com</code>, authorised by the token you granted. It receives:
   </p>
   <ul>
-    <li><strong>When you press Clip:</strong> the page's address and title, its metadata
-      (site name, author, publication date, duration where present), your highlighted text
-      if any, and — for pages detected as articles — the extracted article text. This is the
-      content of the clip; it becomes a page in your workspace.</li>
+    <li><strong>When you press Clip, or use the clip shortcut or right-click menu:</strong>
+      the page's address and title, its metadata (site name, author, publication date,
+      duration where present), the addresses of its preview image and icon, your highlighted
+      text if any, the note and tags you added if any, and — for pages detected as articles —
+      the extracted article text. This is the content of the clip; it becomes a page in your
+      workspace. When the destination is a database, a request for that database first, so
+      those details can go in its matching columns &mdash; and, if you typed a tag the
+      database does not have yet, a request adding it to that database's tag column.</li>
+    <li><strong>When you pin a pasted link:</strong> a request for that page or database, so
+      the pin can show its title.</li>
     <li><strong>When you type in the search box:</strong> the search term, to find
       destinations.</li>
     <li><strong>When you select a destination page:</strong> a request for that page, so its
