@@ -95,7 +95,7 @@ npx -y web-ext sign --source-dir notion-clipper-source --channel unlisted --api-
 
 `--channel unlisted` returns a self-distributable `.xpi`; `--channel listed` submits for review. The site's download button points at releases, so publish the signed file there first.
 
-Firefox 140 is the floor (MV3 service workers); Chrome 120+ for DNR modifyHeaders. (`strict_min_version`): host permissions grant-at-install needs 127+, `data_collection_permissions` needs 140. Firefox for Android reads that key only from 142, so leave the Android listing off on AMO.
+Firefox 140 is the floor (MV3 service workers); Chrome 120+ for DNR modifyHeaders. (`strict_min_version`): host permissions grant-at-install needs 127+, `data_collection_permissions` needs 140. Firefox for Android reads that key only from 142, which is why the manifest's `gecko_android` block sets 142 as the Android floor; the Android listing on AMO stays on.
 
 ## Site deploy
 
