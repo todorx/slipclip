@@ -1,6 +1,6 @@
 import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
 import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping, highlightsMarkdown, parseProperties } from "./highlights.js";
-import { clipTo, readDestination, tagsColumn, readClips, findClip } from "./clip.js";
+import { readDestination, tagsColumn, readClips, findClip } from "./clip.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -118,11 +118,13 @@ async function pinCurrent() {
   paintPin();
 }
 
+const isDatabaseType = (t) => t === "database" || t === "data_source";
+
 // Tags are offered only where there is a tags column to put them in.
 async function showTags() {
   $("tagbox").hidden = true;
   const id = currentId();
-  if (!id || $("parent").dataset.type !== "database") return;
+  if (!id || !isDatabaseType($("parent").dataset.type)) return;
   try {
     const column = tagsColumn(parseProperties(await readDestination(id)));
     // The destination may have changed while Notion was answering.
@@ -152,15 +154,16 @@ const selectedTags = () => $("tagbox").hidden ? [] : [...new Set([
 ])];
 
 // Picking a page reveals the databases living inside it, indented beneath it.
-async function expandPage(id) {
+async function expandPage(id, { silent = false } = {}) {
   if (listed.some((it) => it.inside === id)) return;
-  say("Looking inside...");
+  if (!silent) say("Looking inside...");
   try {
     const raw = await mcpTool("notion-fetch", { id });
     const kids = parseChildDatabases(raw);
     if (!kids.length) {
       console.debug("notion-fetch returned no <database> tags:", raw);
-      return say("No databases inside that page.");
+      if (!silent) say("No databases inside that page.");
+      return;
     }
 
     // The page may not be in the list at all - an auto-expanded destination
@@ -169,10 +172,13 @@ async function expandPage(id) {
     listed.splice(at === -1 ? listed.length : at + 1, 0, ...kids.map((k) => ({ ...k, inside: id })));
     renderPicker(id);
 
-    // The select still shows the parent, so say where the new entries went.
-    say(`${kids.length} database${kids.length > 1 ? "s" : ""} inside. Open Destination to pick one.`);
+    // The select still shows the parent, so say where the new entries went,
+    // without clobbering an existing error or "Already clipped" notice.
+    if (!silent || !$("status").textContent) {
+      say(`${kids.length} database${kids.length > 1 ? "s" : ""} inside. Open Destination to pick one.`);
+    }
   } catch (e) {
-    say("Error: " + e.message, "error");
+    if (!silent) say("Error: " + e.message, "error");
   }
 }
 
@@ -189,20 +195,31 @@ async function clip() {
   const tab = await activeTab();
   if (!tab?.id) throw new Error("No active tab to clip.");
   const mode = $("mode").disabled ? "child" : $("mode").value;
-  const { link, kind } = await clipTo(tab.id, {
-    parentId,
-    known,
-    mode,
-    title: $("title").value,
-    note: $("note").value,
-    tags: selectedTags()
+
+  // Run in the background worker so closing the popup mid-request never aborts
+  // the save. If the popup stays open, handle the result right here.
+  const r = await browser.runtime.sendMessage({
+    type: "clip",
+    tabId: tab.id,
+    options: {
+      parentId,
+      known,
+      mode,
+      title: $("title").value,
+      note: $("note").value,
+      tags: selectedTags()
+    }
   });
+  if (!r?.ok) {
+    await browser.storage.local.remove("clip_error");
+    throw new Error(r?.error || "Clip failed.");
+  }
+  const { link, kind } = r;
 
   // A pasted link is settled now, so the next open knows what it points at.
   if (kind && kind !== known) {
     $("parent").dataset.type = kind;
     syncMode();
-    await browser.storage.local.set({ parentType: kind });
     showTags();
   }
   return { link, mode };
@@ -313,7 +330,7 @@ async function flushHighlights() {
 // You cannot append blocks to a database, so that choice disappears when the
 // destination is known to be one.
 function syncMode() {
-  const isDatabase = $("parent").dataset.type === "database";
+  const isDatabase = isDatabaseType($("parent").dataset.type);
   $("mode").disabled = isDatabase;
   if (isDatabase) $("mode").value = "child";
 }
@@ -378,12 +395,17 @@ if (typeof browser !== "undefined") {
   });
 
   $("clip").addEventListener("click", async () => {
+    $("clip").disabled = true;
     say("Clipping...");
     try {
       const { link, mode } = await clip();
       say(mode === "append" ? "Added to the end of the page." : "Clipped.", "", link);
       $("clip").textContent = "Clip again";
-    } catch (e) { say("Error: " + e.message, "error"); }
+    } catch (e) {
+      say("Error: " + e.message, "error");
+    } finally {
+      $("clip").disabled = false;
+    }
   });
 
   $("openoptions").addEventListener("click", () => browser.runtime.openOptionsPage());
@@ -456,6 +478,6 @@ if (typeof browser !== "undefined") {
     // Reopening on a remembered page: surface its inline databases without
     // making the user re-pick the page first.
     const remembered = normalizeId($("parent").value);
-    if (remembered && $("parent").dataset.type !== "database") expandPage(remembered);
+    if (remembered && !isDatabaseType($("parent").dataset.type)) expandPage(remembered, { silent: true });
   })();
 }

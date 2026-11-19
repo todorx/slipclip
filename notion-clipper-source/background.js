@@ -48,6 +48,10 @@ function handle(msg) {
       return accessToken()
         .then((token) => ({ ok: true, token }))
         .catch((e) => ({ ok: false, error: e.message }));
+    // Popup clips run here so closing the popup mid-request never aborts the
+    // save. The badge reports the outcome when the popup is already gone.
+    case "clip":
+      return runClip(msg.tabId, msg.options);
     // The popup drains the queue but the badge is this worker's, so it asks.
     case "repaint-badge":
       return paintBadge().then(() => ({ ok: true }));
@@ -146,6 +150,23 @@ function capture(input) {
 
 // ---------- quick clip ----------
 
+async function runClip(tabId, options) {
+  await browser.action.setBadgeBackgroundColor({ color: "#76766e" });
+  await browser.action.setBadgeText({ text: "…" });
+  try {
+    const { link, kind } = await clipTo(tabId, options);
+    if (kind && kind !== options.known) await browser.storage.local.set({ parentType: kind });
+    await browser.storage.local.remove("clip_error");
+    await flash("✓", "#2e7d32");
+    return { ok: true, link, kind };
+  } catch (e) {
+    console.error("clip failed:", e);
+    await browser.storage.local.set({ clip_error: e.message });
+    await flashEmpty();
+    return { ok: false, error: e.message };
+  }
+}
+
 // The shortcut and the menu clip straight to the destination the popup last
 // clipped to. With none yet, the popup opens so one can be picked; the badge is
 // the only other feedback, and a failure waits in storage for the next popup.
@@ -161,18 +182,7 @@ async function quickClip(tab) {
     return flashEmpty();
   }
 
-  await browser.action.setBadgeBackgroundColor({ color: "#76766e" });
-  await browser.action.setBadgeText({ text: "…" });
-  try {
-    const { kind } = await clipTo(tab.id, { parentId, known: parentType || "" });
-    if (kind && kind !== parentType) await browser.storage.local.set({ parentType: kind });
-    await browser.storage.local.remove("clip_error");
-    await flash("✓", "#2e7d32");
-  } catch (e) {
-    console.error("quick clip failed:", e);
-    await browser.storage.local.set({ clip_error: e.message });
-    await flashEmpty();
-  }
+  await runClip(tab.id, { parentId, known: parentType || "" });
 }
 
 browser.contextMenus?.onClicked.addListener((info, tab) => {
@@ -186,6 +196,7 @@ browser.contextMenus?.onClicked.addListener((info, tab) => {
 });
 
 browser.commands?.onCommand.addListener(async (name, tab) => {
+  if (!tab?.id) [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (name === "clip-page") return quickClip(tab);
   if (name !== "save-highlight" || !tab?.id) return;
   try {

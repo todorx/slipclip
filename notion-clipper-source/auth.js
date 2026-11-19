@@ -147,10 +147,17 @@ export async function signOut() {
   await browser.storage.local.remove(["access_token", "refresh_token", "expires_at", "auth_error"]);
 }
 
+// Coalesce concurrent refreshes: Notion rotates the refresh token on every use,
+// so two calls racing on an expired token would send the same token twice and
+// revoke the session.
+let refreshing = null;
+
 export async function accessToken() {
   const s = await browser.storage.local.get(["access_token", "refresh_token", "expires_at", "client_id"]);
   if (!s.access_token) throw new Error("Not connected.");
   if (s.expires_at && Date.now() < s.expires_at) return s.access_token;
   if (!s.refresh_token) throw new Error("Session expired - connect again.");
-  return tokenRequest({ grant_type: "refresh_token", refresh_token: s.refresh_token, client_id: s.client_id });
+  refreshing ??= tokenRequest({ grant_type: "refresh_token", refresh_token: s.refresh_token, client_id: s.client_id })
+    .finally(() => { refreshing = null; });
+  return refreshing;
 }

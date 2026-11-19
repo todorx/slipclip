@@ -1,9 +1,9 @@
 // node test.mjs   (Node 18+, no deps)
 import assert from "node:assert/strict";
-import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn } from "./auth.js";
-import { normalizeId, parseResults, errorText, unwrapPayload } from "./mcp.js";
+import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn, accessToken } from "./auth.js";
+import { normalizeId, parseResults, parseSSE, errorText, unwrapPayload, useTokenSource } from "./mcp.js";
 import { optionLabel, parseChildDatabases, togglePin } from "./popup.js";
-import { buildMarkdown, formatDuration, clipProperties, tagsColumn, notionLink, rememberClip, findClip, noteCallout, addTagsStatement } from "./clip.js";
+import { buildMarkdown, formatDuration, clipProperties, tagsColumn, notionLink, rememberClip, findClip, noteCallout, addTagsStatement, getTabData, clipTo } from "./clip.js";
 import { extractPage } from "./extract.js";
 import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightsMarkdown, coalesce, flushPending, readHighlights, writeHighlights } from "./highlights.js";
 
@@ -658,5 +658,213 @@ delete globalThis.getSelection;
 delete globalThis.Readability;
 delete globalThis.TurndownService;
 delete globalThis.turndownPluginGfm;
+
+// --- regression tests for page-saving edge cases ---
+
+// 1. Concurrent accessToken() calls on an expired token must share one refresh,
+// because Notion rotates refresh tokens on every use.
+{
+  const tokenStore = {
+    access_token: "old-token",
+    refresh_token: "refresh-1",
+    expires_at: Date.now() - 1000,
+    client_id: "client-1"
+  };
+  let refreshes = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.browser = {
+    storage: { local: {
+      get: async (keys) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((k) => [k, tokenStore[k]])),
+      set: async (o) => Object.assign(tokenStore, o)
+    } }
+  };
+  globalThis.fetch = async () => {
+    refreshes++;
+    await new Promise((r) => setTimeout(r, 10));
+    return new Response(JSON.stringify({ access_token: "new-token", refresh_token: "refresh-2", expires_in: 3600 }), {
+      status: 200, headers: { "Content-Type": "application/json" }
+    });
+  };
+  const [t1, t2] = await Promise.all([accessToken(), accessToken()]);
+  assert.equal(t1, "new-token");
+  assert.equal(t2, "new-token");
+  assert.equal(refreshes, 1, "concurrent refreshes coalesce into one POST /token");
+  globalThis.fetch = realFetch;
+  delete globalThis.browser;
+}
+
+// 2. notion-search may return type "data_source" for databases.
+assert.deepEqual(
+  parseResults(JSON.stringify({ results: [{ id: "11111111-1111-4111-8111-111111111111", title: "Reading", type: "data_source" }] })),
+  [{ id: "11111111-1111-4111-8111-111111111111", title: "Reading", type: "database" }],
+  "data_source results normalize to database"
+);
+
+// 3. SSE streams with trailing notifications or non-JSON frames still yield the response.
+const multiSSE = [
+  'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":50}}',
+  'event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"content":[{"text":"ok"}]}}',
+  'event: message\ndata: [DONE]'
+].join("\n\n");
+assert.deepEqual(parseSSE(multiSSE).result, { content: [{ text: "ok" }] }, "parseSSE picks the JSON-RPC response over trailing frames");
+
+// 4. Parentheses in URLs are escaped in Markdown links.
+const wiki = buildMarkdown({ url: "https://en.wikipedia.org/wiki/Python_(programming_language)", title: "Python", body: "Intro." });
+assert.ok(wiki.includes("[Python](https://en.wikipedia.org/wiki/Python_%28programming_language%29)"), "URL parens are encoded in markdown link");
+
+// 5. extractPage() survives non-string JSON-LD dates, array authors, null body,
+// oversized cover URLs, empty/headerless tables, and truncated code fences.
+{
+  let capturedService;
+  class FakeTd {
+    constructor() { capturedService = this; this.rules = {}; }
+    addRule(k, r) { this.rules[k] = r; return this; }
+    turndown() { return "```js\n" + "a".repeat(60050); }
+  }
+  const ldJson = JSON.stringify({
+    "@type": "Article",
+    datePublished: 20260401,
+    author: [{ "@type": "Person", name: "Alice" }, { "@type": "Person", name: "Bob" }]
+  });
+  globalThis.document = {
+    title: "Edge Case",
+    body: null,
+    querySelector: (sel) =>
+      sel === 'meta[property="og:image"]' ? { content: "https://cdn.example.com/" + "x".repeat(2100) } : null,
+    querySelectorAll: (sel) =>
+      sel.includes("ld+json") ? [{ textContent: ldJson }] : [],
+    cloneNode: () => globalThis.document
+  };
+  globalThis.location = { href: "https://example.com/edge" };
+  globalThis.getSelection = () => null;
+  globalThis.Readability = class { parse() { return { content: "<p>x</p>" }; } };
+  globalThis.TurndownService = FakeTd;
+  globalThis.turndownPluginGfm = { gfm: () => {} };
+
+  const edge = extractPage();
+  assert.equal(edge.author, "Alice, Bob", "array JSON-LD authors are joined");
+  assert.equal(edge.published, "20260401", "non-string JSON-LD datePublished does not throw");
+  assert.equal(edge.image, "", "oversized cover URL (>2000 chars) is dropped");
+  assert.equal(edge.truncated, true);
+  assert.ok(edge.body.endsWith("\n```"), "truncated fenced code block is closed");
+
+  const safeTable = capturedService.rules.safeTable;
+  assert.ok(safeTable, "extractPage registers a safeTable rule");
+  assert.equal(safeTable.filter({ nodeName: "TABLE", rows: [] }), true, "empty table is caught before gfm crashes");
+  assert.equal(safeTable.replacement("", { nodeName: "TABLE", rows: [] }), "", "empty table renders nothing");
+  const headerless = { nodeName: "TABLE", rows: [{ parentNode: { nodeName: "TBODY", firstChild: null }, childNodes: [{ nodeName: "TD" }] }] };
+  assert.equal(safeTable.filter(headerless), true, "headerless table is caught instead of emitting raw HTML");
+  assert.equal(
+    safeTable.replacement("\n| A | B |\n| C | D |\n", headerless),
+    "\n\n| A | B |\n| --- | --- |\n| C | D |\n\n",
+    "headerless table becomes valid GFM instead of raw <table> HTML"
+  );
+
+  // Quotes in image title and parens in image URL are escaped.
+  const imgRule = capturedService.rules.lazyImage;
+  assert.equal(
+    imgRule.replacement("", { getAttribute: (n) => ({ src: "https://example.com/a_(1).png", title: 'Say "hi"' }[n] ?? null) }),
+    '![](https://example.com/a_%281%29.png "Say \\"hi\\"")',
+    "image URL parens and title quotes are escaped"
+  );
+
+  // Null document.body does not crash when falling back to collectLinks().
+  globalThis.Readability = class { parse() { return null; } };
+  const noBody = extractPage();
+  assert.equal(noBody.body, "", "null document.body falls back cleanly without throwing");
+
+  delete globalThis.document;
+  delete globalThis.location;
+  delete globalThis.getSelection;
+  delete globalThis.Readability;
+  delete globalThis.TurndownService;
+  delete globalThis.turndownPluginGfm;
+}
+
+// 6. getTabData falls back to a link clip on http(s) tabs where injection is
+// blocked (e.g. PDF viewer), and still refuses internal browser pages.
+{
+  globalThis.browser = {
+    scripting: { executeScript: async () => { throw new Error("blocked"); } },
+    tabs: {
+      get: async (id) => id === 1
+        ? { url: "https://arxiv.org/pdf/2401.00001.pdf", title: "Paper PDF" }
+        : { url: "about:debugging", title: "Debugging" }
+    }
+  };
+  const pdf = await getTabData(1);
+  assert.equal(pdf.url, "https://arxiv.org/pdf/2401.00001.pdf");
+  assert.equal(pdf.title, "Paper PDF");
+  assert.equal(pdf.siteName, "arxiv.org");
+  assert.equal(pdf.kind, "link");
+  await assert.rejects(() => getTabData(2), /Can't read this page/);
+  delete globalThis.browser;
+}
+
+// 7. clipTo retries without icon/cover if Notion rejects them.
+{
+  const clipStore = {};
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  useTokenSource(async () => "tok");
+  globalThis.browser = {
+    scripting: {
+      executeScript: async ({ func }) => func ? [{
+        result: {
+          url: "https://example.com/post",
+          title: "My Post",
+          description: "Desc",
+          siteName: "Example",
+          author: "",
+          published: "",
+          duration: "",
+          selection: "",
+          image: "https://example.com/bad-cover.webp",
+          icon: "https://example.com/favicon.ico",
+          kind: "article",
+          body: "Body text.",
+          truncated: false
+        }
+      }] : []
+    },
+    storage: { local: {
+      get: async (k) => ({ [k]: clipStore[k] }),
+      set: async (o) => Object.assign(clipStore, o)
+    } }
+  };
+  globalThis.fetch = async (_url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.method === "initialize") {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+        status: 200, headers: { "Content-Type": "application/json", "Mcp-Session-Id": "s1" }
+      });
+    }
+    if (req.method === "notifications/initialized") return new Response(null, { status: 202 });
+    if (req.method === "tools/call") {
+      calls.push(req.params);
+      if (calls.length === 1) {
+        return new Response(JSON.stringify({
+          jsonrpc: "2.0", id: 2,
+          result: { isError: true, content: [{ text: JSON.stringify({ message: "Invalid cover URL" }) }] }
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0", id: 2,
+        result: { content: [{ text: JSON.stringify({ pages: [{ id: "11111111-1111-4111-8111-111111111111", url: "https://app.notion.com/p/11111111111141118111111111111111" }] }) }] }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error("unexpected rpc: " + req.method);
+  };
+
+  const out = await clipTo(1, { parentId: "22222222-2222-4222-8222-222222222222", known: "page" });
+  assert.equal(out.link, "https://app.notion.com/p/11111111111141118111111111111111");
+  assert.equal(calls.length, 2, "retried once without icon/cover");
+  assert.ok("cover" in calls[0].arguments.pages[0], "first attempt included cover");
+  assert.ok(!("cover" in calls[1].arguments.pages[0]) && !("icon" in calls[1].arguments.pages[0]), "retry omitted icon and cover");
+  assert.equal(clipStore.clipped.length, 1, "clip history recorded the save");
+
+  globalThis.fetch = realFetch;
+  delete globalThis.browser;
+}
 
 console.log("ok");

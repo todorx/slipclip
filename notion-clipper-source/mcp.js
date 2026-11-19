@@ -21,10 +21,16 @@ export function normalizeId(input) {
 
 // Both notion-search and notion-list-recent-pages answer with a JSON string
 // shaped { results: [...] }. Search carries `id`; recent pages carry only `url`.
+// Notion's newer search results label databases as `data_source`; normalize so
+// callers only have to handle `page` and `database`.
 export function parseResults(text) {
   const { results } = JSON.parse(text || "{}");
   return (results || [])
-    .map((r) => ({ id: r.id || normalizeId(r.url), title: r.title || "", type: r.type }))
+    .map((r) => ({
+      id: r.id || normalizeId(r.url),
+      title: r.title || "",
+      type: r.type === "data_source" ? "database" : r.type
+    }))
     .filter((r) => r.id);
 }
 
@@ -46,12 +52,22 @@ export function unwrapPayload(raw) {
 
 // ---------- MCP transport ----------
 
-// ponytail: one JSON-RPC response per POST. Real SSE framing only if Notion
-// starts streaming several messages per request.
-function parseSSE(text) {
-  const last = text.split(/\r?\n\r?\n/).filter((b) => b.includes("data:")).at(-1) || "";
-  const data = last.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("");
-  return data ? JSON.parse(data) : {};
+// An SSE stream may carry progress notifications or keep-alive frames beside
+// the JSON-RPC response, so walk blocks from the end and prefer one carrying
+// `result` or `error`.
+export function parseSSE(text) {
+  const blocks = String(text || "").split(/\r?\n\r?\n/);
+  let fallback = {};
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const data = blocks[i].split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("");
+    if (!data) continue;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed && ("result" in parsed || "error" in parsed)) return parsed;
+      if (!Object.keys(fallback).length) fallback = parsed;
+    } catch { /* non-JSON event such as [DONE] or ping */ }
+  }
+  return fallback;
 }
 
 async function rpc(token, sessionId, msg) {
@@ -70,9 +86,15 @@ async function rpc(token, sessionId, msg) {
   if (r.status === 401) throw new Error("Notion rejected the session - disconnect and connect again.");
   if (r.status === 202) return { sid, result: null };
   const text = await r.text();
-  const body = r.headers.get("Content-Type")?.includes("text/event-stream")
-    ? parseSSE(text)
-    : JSON.parse(text || "{}");
+  let body = {};
+  try {
+    body = r.headers.get("Content-Type")?.includes("text/event-stream")
+      ? parseSSE(text)
+      : JSON.parse(text || "{}");
+  } catch {
+    if (!r.ok) throw new Error(`MCP ${r.status}`);
+    throw new Error("Unexpected response from Notion.");
+  }
   if (!r.ok) throw new Error(body?.error?.message || `MCP ${r.status}`);
   if (body.error) throw new Error(body.error.message);
   return { sid, result: body.result };

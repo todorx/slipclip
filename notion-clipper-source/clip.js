@@ -4,7 +4,7 @@
 
 import { extractPage } from "./extract.js";
 import { mcpTool, normalizeId } from "./mcp.js";
-import { applyMapping, canonicalUrl, matchProperties, parseDataSourceId, parseProperties, quoteLines } from "./highlights.js";
+import { applyMapping, canonicalUrl, matchProperties, parseDataSourceId, parseProperties, quoteLines, siteOf } from "./highlights.js";
 
 export const CLIPS_KEY = "clipped";
 const CLIPS_CAP = 500;
@@ -33,7 +33,8 @@ export const noteCallout = (note) =>
 // break between them, a new page does not.
 export function buildMarkdown(page, { heading = false } = {}) {
   const { url, title, description, selection, siteName, author, published, duration, body, truncated, kind, note } = page;
-  const link = title ? `[${title.replace(/[[\]]/g, "\\$&")}](${url})` : url;
+  const safeUrl = String(url || "").replace(/\(/g, "%28").replace(/\)/g, "%29");
+  const link = title ? `[${title.replace(/[[\]]/g, "\\$&")}](${safeUrl})` : url;
   const facts = [siteName, author, published, formatDuration(duration)].filter(Boolean).join(" · ");
 
   // The passage you chose, or an index's blurb plus its links, or the article,
@@ -153,8 +154,31 @@ export async function getTabData(tabId) {
   } catch { injected = []; }
 
   const data = injected?.[0]?.result;
-  if (!data) throw new Error("Can't read this page. Browsers block extensions on browser pages such as about:debugging or chrome://extensions - switch to a normal web page and clip that.");
-  return data;
+  if (data) return data;
+
+  // Browser PDF viewers and extension stores block script injection even on
+  // normal http(s) URLs. Fall back to a link clip from the tab metadata when
+  // the tab itself is a web page, and still refuse internal browser pages.
+  const tab = await browser.tabs?.get?.(tabId).catch(() => null);
+  if (tab?.url && /^https?:\/\//i.test(tab.url)) {
+    return {
+      url: tab.url,
+      title: (tab.title || "").trim(),
+      description: "",
+      siteName: siteOf(tab.url),
+      author: "",
+      published: "",
+      duration: "",
+      selection: "",
+      image: "",
+      icon: "",
+      kind: "link",
+      body: "",
+      truncated: false
+    };
+  }
+
+  throw new Error("Can't read this page. Browsers block extensions on browser pages such as about:debugging or chrome://extensions - switch to a normal web page and clip that.");
 }
 
 // One read per destination per popup or worker lifetime: the popup reads it to
@@ -197,6 +221,26 @@ export async function clipTo(tabId, { parentId, known = "", mode = "child", titl
       ...(tab.icon && { icon: tab.icon }),
       ...(tab.image && { cover: tab.image })
     };
+    const createPage = async (parent, properties) => {
+      try {
+        return await mcpTool("notion-create-pages", {
+          parent,
+          pages: [{ properties, ...looks }],
+          allow_async: false
+        });
+      } catch (e) {
+        // An icon or cover URL Notion rejects (unsupported format, >2000 chars,
+        // etc.) should never stop the page itself from being saved.
+        if ((looks.icon || looks.cover) && /icon|cover/i.test(e.message)) {
+          return mcpTool("notion-create-pages", {
+            parent,
+            pages: [{ properties, content: looks.content }],
+            allow_async: false
+          });
+        }
+        throw e;
+      }
+    };
     // A database with more than one data source refuses database_id, and the
     // fetch that reads the columns names the source anyway.
     const intoDatabase = async () => {
@@ -214,26 +258,21 @@ export async function clipTo(tabId, { parentId, known = "", mode = "child", titl
         destinations.delete(parentId);
       }
 
-      return mcpTool("notion-create-pages", {
-        parent: source ? { data_source_id: source } : { database_id: parentId },
-        pages: [{ properties: clipProperties(page, parseProperties(schema), { tags }), ...looks }],
-        allow_async: false
-      });
+      return createPage(
+        source ? { data_source_id: source } : { database_id: parentId },
+        clipProperties(page, parseProperties(schema), { tags })
+      );
     };
 
-    if (known === "database") raw = await intoDatabase();
+    if (known === "database" || known === "data_source") raw = await intoDatabase();
     else {
       try {
-        raw = await mcpTool("notion-create-pages", {
-          parent: { page_id: parentId },
-          pages: [{ properties: { title: page.title }, ...looks }],
-          allow_async: false
-        });
+        raw = await createPage({ page_id: parentId }, { title: page.title });
         kind = "page";
       } catch (e) {
         // A pasted link doesn't say which kind it is. Notion's error does, so one
         // retry beats making the user classify it.
-        if (known || !/not a (page|database)/i.test(e.message)) throw e;
+        if (known || !/not a (page|database)|is a database|is a data.?source/i.test(e.message)) throw e;
         raw = await intoDatabase();
       }
     }
