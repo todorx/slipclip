@@ -1,24 +1,39 @@
-// Reveal on scroll, and run the hero's clip animation once it is on screen.
-// Everything degrades to "already visible" without JS or with reduced motion.
+// Section rail tracking (matching todorx.dev) and hero clip stage animation.
+// Everything degrades cleanly without JS or with reduced motion.
 
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const stage = document.getElementById("stage");
 
 if (still) {
-  document.querySelectorAll(".reveal").forEach((el) => el.classList.add("seen"));
-  document.getElementById("stage")?.classList.add("run");
-} else {
-  const watcher = new IntersectionObserver((entries) => {
+  stage?.classList.add("run");
+} else if (stage) {
+  const stageWatcher = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
-      entry.target.classList.add(entry.target.id === "stage" ? "run" : "seen");
-      watcher.unobserve(entry.target);
+      entry.target.classList.add("run");
+      stageWatcher.unobserve(entry.target);
     }
-  }, { rootMargin: "0px 0px -12% 0px", threshold: .15 });
+  }, { rootMargin: "0px 0px -10% 0px", threshold: 0.15 });
+  stageWatcher.observe(stage);
+}
 
-  for (const el of document.querySelectorAll(".reveal, #stage")) watcher.observe(el);
+const railLinks = [...document.querySelectorAll(".rail a[href^='#']")];
+if (railLinks.length) {
+  const sections = railLinks
+    .map((a) => ({ a, el: document.getElementById(a.getAttribute("href").slice(1)) }))
+    .filter((s) => s.el);
 
-  // Stagger tiles within a row so a grid arrives as a sequence, not a slab.
-  document.querySelectorAll(".grid .reveal, .plain .reveal").forEach((el, i) => {
-    el.style.transitionDelay = `${i * 70}ms`;
-  });
+  const setActive = (id) => {
+    for (const { a, el } of sections) {
+      if (el.id === id) a.setAttribute("aria-current", "location");
+      else a.removeAttribute("aria-current");
+    }
+  };
+
+  const railWatcher = new IntersectionObserver((entries) => {
+    const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+    if (visible[0]) setActive(visible[0].target.id);
+  }, { rootMargin: "-25% 0px -55% 0px", threshold: [0, 0.25, 0.5] });
+
+  for (const { el } of sections) railWatcher.observe(el);
 }

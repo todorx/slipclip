@@ -1,18 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
-  <rect width="1200" height="630" fill="#0b0b0c"/>
-  <g transform="translate(96 96)">
-    <image href="logo.png" width="80" height="80"/>
+  <rect width="1200" height="630" fill="#f3f2f2"/>
+  <rect x="44" y="275" width="4" height="80" rx="1" fill="#201e1d"/>
+  <g transform="translate(108 96)">
+    <image href="logo.png" width="72" height="72"/>
 
-    <text x="0" y="150" font-family="system-ui, sans-serif" font-size="25" letter-spacing="4"
-          fill="#8a8a80">SLIPCLIP FOR NOTION</text>
+    <text x="0" y="136" font-family="Georgia, serif" font-size="22" letter-spacing="2.4"
+          fill="#7d7979">SLIPCLIP FOR NOTION  /  FIREFOX &amp; CHROME</text>
 
-    <text x="0" y="288" font-family="Georgia, serif" font-size="90" fill="#fafaf7">Clip the article.</text>
+    <text x="0" y="266" font-family="Georgia, serif" font-size="86" fill="#201e1d">Clip the article.</text>
+    <text x="0" y="360" font-family="Georgia, serif" font-size="86" font-style="italic" fill="#c2410c">Not the furniture.</text>
 
-    <rect x="-6" y="352" width="612" height="28" fill="#ffd54a"/>
-    <text x="0" y="386" font-family="Georgia, serif" font-size="90" fill="#fafaf7">Not the furniture.</text>
-
-    <text x="0" y="452" font-family="system-ui, sans-serif" font-size="27" fill="#8a8a80">
-      A Firefox extension. Clean Markdown into any Notion page.
+    <text x="0" y="438" font-family="Georgia, serif" font-size="27" fill="#605d5d">
+      Clean Markdown into any Notion page or database. No server, no token to paste.
     </text>
   </g>
 </svg>

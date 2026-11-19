@@ -25,14 +25,14 @@
 <meta name="twitter:description" content="What SlipClip stores, what it sends, and to whom.">
 <meta name="twitter:image" content="https://slipclip.todorx.dev/og.png">
 <meta name="twitter:image:alt" content="SlipClip for Notion">
-<meta name="theme-color" content="#0b0b0c">
+<meta media="(prefers-color-scheme: light)" name="theme-color" content="#f3f2f2">
+<meta media="(prefers-color-scheme: dark)" name="theme-color" content="#181716">
 
 <link rel="icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="favicon.png">
-<link rel="preload" href="fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css?v=20260922">
-<link rel="stylesheet" href="style.css?v=20260922">
-<script>document.documentElement.classList.add("js")</script>
+<link rel="preload" href="/fonts/source-serif-4-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="fonts.css?v=20261119">
+<link rel="stylesheet" href="style.css?v=20261119">
 
 <script type="application/ld+json">
 {
@@ -52,158 +52,162 @@
 </head>
 <body>
 
-<header class="wrap">
-  <div class="top">
+<main>
+  <header class="doc-top">
     <a class="brand" href="index.html">
-      <img src="logo.png" alt="" width="26" height="26">
+      <img src="logo.png" alt="" width="24" height="24">
       SlipClip
     </a>
-    <nav>
+    <nav class="doc-nav">
       <a href="index.html">Home</a>
-      <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">Add-ons</a>
+      <a href="https://addons.mozilla.org/en-US/firefox/addon/slipclip-for-notion/">Add-ons ↗</a>
+      <a href="https://github.com/todorx/slipclip">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <article class="doc">
+    <div class="eyebrow">Privacy</div>
+    <h1>Privacy Policy</h1>
+    <p class="updated">EFFECTIVE 17 SEPTEMBER 2026 · VERSION 1.4.0</p>
+
+    <p>
+      SlipClip for Notion is a Firefox and Chrome extension that copies web pages into your own Notion
+      workspace. It has no server, no account and no analytics. This policy covers both the
+      extension and this website, and describes the software as published at
+      <a href="https://github.com/todorx/slipclip">github.com/todorx/slipclip</a>, where the
+      behaviour below can be read in full.
+    </p>
+
+    <h2>What the developer collects</h2>
+    <p>
+      Nothing. There is no SlipClip server, no database and no endpoint operated by the
+      developer. No clip, page address, search term or identifier is ever transmitted to the
+      developer, and no usage or crash reporting of any kind is included.
+    </p>
+
+    <h2>What is stored on your device</h2>
+    <p>
+      The extension keeps the following in your browser's local extension storage. It never
+      leaves your browser and is removed when you uninstall the extension.
+    </p>
+    <ul>
+      <li>Your Notion OAuth access token, refresh token and expiry time.</li>
+      <li>The OAuth client identifier your copy of the extension registered with Notion.</li>
+      <li>The last destination you clipped to, so the popup can remember it.</li>
+      <li>Destinations you pinned &mdash; their Notion id, title and whether each is a page or
+        a database.</li>
+      <li>The addresses of the last 500 pages you clipped, each with the link to the Notion page
+        it became and when, so the popup can tell you when you are about to clip a page
+        twice.</li>
+      <li>An error message from the most recent failed sign-in, and from the most recent failed
+        clip made with the keyboard shortcut or the right-click menu, so it can be shown to
+        you.</li>
+      <li>Highlights you have saved but not yet synced &mdash; the passage itself, the page's
+        address and title, the site it came from, and when you saved it. They are held here so
+        they survive closing the tab, and each one stays until it reaches Notion or you delete
+        it from the Highlights tab.</li>
+      <li>The database or page you chose for highlights, and — for a database — which of its columns holds which field.</li>
+    </ul>
+    <p>
+      Pressing <strong>Disconnect</strong> deletes the tokens and the stored sign-in error.
+      These values are stored unencrypted, as browser extension storage has no secret store;
+      anyone with access to your Firefox profile directory can read them, the same as for any
+      signed-in extension.
+    </p>
+
+    <h2>What is sent to Notion</h2>
+    <p>
+      Notion Labs, Inc. is the only third party the extension communicates with, at
+      <code>mcp.notion.com</code>, authorised by the token you granted. It receives:
+    </p>
+    <ul>
+      <li><strong>When you press Clip, or use the clip shortcut or right-click menu:</strong>
+        the page's address and title, its metadata (site name, author, publication date,
+        duration where present), the addresses of its preview image and icon, your highlighted
+        text if any, the note and tags you added if any, and — for pages detected as articles —
+        the extracted article text. This is the content of the clip; it becomes a page in your
+        workspace. When the destination is a database, a request for that database first, so
+        those details can go in its matching columns &mdash; and, if you typed a tag the
+        database does not have yet, a request adding it to that database's tag column.</li>
+      <li><strong>When you pin a pasted link:</strong> a request for that page or database, so
+        the pin can show its title.</li>
+      <li><strong>When you type in the search box:</strong> the search term, to find
+        destinations.</li>
+      <li><strong>When you select a destination page:</strong> a request for that page, so its
+        inline databases can be listed.</li>
+      <li><strong>When you open the popup with highlights waiting:</strong> those highlights and
+        the details listed above, written as rows into the database you chose, or appended as
+        quotes to the page you chose. Nothing is sent while you are only saving highlights
+        &mdash; capture writes to your device alone.</li>
+      <li><strong>When you set up the highlights destination:</strong> a request for that page
+        or database, so its kind and columns can be read &mdash; or a request to create a
+        database, if you asked for one.</li>
+    </ul>
+    <p>
+      Notion's handling of that data is governed by
+      <a href="https://www.notion.com/privacy">Notion's Privacy Policy</a>, not this one.
+      Nothing is sent to Notion except in response to one of the actions above.
+    </p>
+
+    <h2>Permissions, and why each exists</h2>
+    <ul>
+      <li><code>activeTab</code> and <code>scripting</code> — to read the page you are
+        clipping, at the moment you click Clip or press the shortcut, in the tab you are looking
+        at. No other tab is accessed and nothing runs in the background.</li>
+      <li><code>storage</code> — to keep the items listed above.</li>
+      <li><code>identity</code> — to run Notion's sign-in flow and receive the result.</li>
+      <li><code>contextMenus</code> — to add "Clip to Notion" and "Save highlight to SlipClip"
+        to the right-click menu.</li>
+      <li><code>declarativeNetRequest</code> — used for exactly one rule: removing the browser
+        <code>Origin</code> header from requests to <code>mcp.notion.com</code>, which that
+        endpoint rejects. No request is inspected, recorded or redirected, and the rule applies
+        to no other address.</li>
+      <li>Host access to <code>https://mcp.notion.com/*</code> and
+        <code>https://slipclip.todorx.dev/*</code> — Notion's MCP endpoint, plus the static
+        OAuth callback page used on Firefox for Android (where the <code>identity</code> API is
+        not available).</li>
+    </ul>
+
+    <h2>This website</h2>
+    <p>
+      slipclip.todorx.dev is a set of static files with no analytics, no cookies and no
+      tracking scripts. Two things about it are still worth stating plainly:
+    </p>
+    <ul>
+      <li>It is hosted on <strong>GitHub Pages</strong>. GitHub receives your IP address and
+        request details as part of serving the page, under
+        <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's Privacy Statement</a>.</li>
+      <li>Its typefaces are served from this same site, not from a third-party font host, so
+        loading the page contacts no one but GitHub.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>
+      The extension is not directed at children and collects nothing from anyone, of any age.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+      If this policy changes, the effective date above changes with it and the previous
+      versions remain readable in the repository's history.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions and corrections belong in
+      <a href="https://github.com/todorx/slipclip/issues">the issue tracker</a>, where the
+      answers stay public and searchable.
+    </p>
+  </article>
+
+  <footer class="colophon">
+    <span>SlipClip for Notion · v1.4.0 · by <a href="https://todorx.dev/">Todor Todorovski</a> · Not affiliated with Notion Labs, Inc.</span>
+    <nav class="colophon-nav">
+      <a href="index.html">Home</a>
       <a href="https://github.com/todorx/slipclip">GitHub</a>
     </nav>
-  </div>
-</header>
-
-<main class="wrap doc">
-  <span class="eyebrow">Privacy</span>
-  <h1>Privacy Policy</h1>
-  <p class="updated">EFFECTIVE 17 SEPTEMBER 2026 · VERSION 1.0.0</p>
-
-  <p>
-    SlipClip for Notion is a Firefox extension that copies web pages into your own Notion
-    workspace. It has no server, no account and no analytics. This policy covers both the
-    extension and this website, and describes the software as published at
-    <a href="https://github.com/todorx/slipclip">github.com/todorx/slipclip</a>, where the
-    behaviour below can be read in full.
-  </p>
-
-  <h2>What the developer collects</h2>
-  <p>
-    Nothing. There is no SlipClip server, no database and no endpoint operated by the
-    developer. No clip, page address, search term or identifier is ever transmitted to the
-    developer, and no usage or crash reporting of any kind is included.
-  </p>
-
-  <h2>What is stored on your device</h2>
-  <p>
-    The extension keeps the following in your browser's local extension storage. It never
-    leaves your browser and is removed when you uninstall the extension.
-  </p>
-  <ul>
-    <li>Your Notion OAuth access token, refresh token and expiry time.</li>
-    <li>The OAuth client identifier your copy of the extension registered with Notion.</li>
-    <li>The last destination you clipped to, so the popup can remember it.</li>
-    <li>Destinations you pinned &mdash; their Notion id, title and whether each is a page or
-      a database.</li>
-    <li>The addresses of the last 500 pages you clipped, each with the link to the Notion page
-      it became and when, so the popup can tell you when you are about to clip a page
-      twice.</li>
-    <li>An error message from the most recent failed sign-in, and from the most recent failed
-      clip made with the keyboard shortcut or the right-click menu, so it can be shown to
-      you.</li>
-    <li>Highlights you have saved but not yet synced &mdash; the passage itself, the page's
-      address and title, the site it came from, and when you saved it. They are held here so
-      they survive closing the tab, and each one stays until it reaches Notion or you delete
-      it from the Highlights tab.</li>
-    <li>The database or page you chose for highlights, and — for a database — which of its columns holds which field.</li>
-  </ul>
-  <p>
-    Pressing <strong>Disconnect</strong> deletes the tokens and the stored sign-in error.
-    These values are stored unencrypted, as browser extension storage has no secret store;
-    anyone with access to your Firefox profile directory can read them, the same as for any
-    signed-in extension.
-  </p>
-
-  <h2>What is sent to Notion</h2>
-  <p>
-    Notion Labs, Inc. is the only third party the extension communicates with, at
-    <code>mcp.notion.com</code>, authorised by the token you granted. It receives:
-  </p>
-  <ul>
-    <li><strong>When you press Clip, or use the clip shortcut or right-click menu:</strong>
-      the page's address and title, its metadata (site name, author, publication date,
-      duration where present), the addresses of its preview image and icon, your highlighted
-      text if any, the note and tags you added if any, and — for pages detected as articles —
-      the extracted article text. This is the content of the clip; it becomes a page in your
-      workspace. When the destination is a database, a request for that database first, so
-      those details can go in its matching columns &mdash; and, if you typed a tag the
-      database does not have yet, a request adding it to that database's tag column.</li>
-    <li><strong>When you pin a pasted link:</strong> a request for that page or database, so
-      the pin can show its title.</li>
-    <li><strong>When you type in the search box:</strong> the search term, to find
-      destinations.</li>
-    <li><strong>When you select a destination page:</strong> a request for that page, so its
-      inline databases can be listed.</li>
-    <li><strong>When you open the popup with highlights waiting:</strong> those highlights and
-      the details listed above, written as rows into the database you chose, or appended as
-      quotes to the page you chose. Nothing is sent while you are only saving highlights
-      &mdash; capture writes to your device alone.</li>
-    <li><strong>When you set up the highlights destination:</strong> a request for that page
-      or database, so its kind and columns can be read &mdash; or a request to create a
-      database, if you asked for one.</li>
-  </ul>
-  <p>
-    Notion's handling of that data is governed by
-    <a href="https://www.notion.com/privacy">Notion's Privacy Policy</a>, not this one.
-    Nothing is sent to Notion except in response to one of the actions above.
-  </p>
-
-  <h2>Permissions, and why each exists</h2>
-  <ul>
-    <li><code>activeTab</code> and <code>scripting</code> — to read the page you are
-      clipping, at the moment you click Clip, in the tab you are looking at. No other tab is
-      accessed and nothing runs in the background.</li>
-    <li><code>storage</code> — to keep the items listed above.</li>
-    <li><code>identity</code> — to run Notion's sign-in flow and receive the result.</li>
-    <li><code>webRequest</code> and <code>webRequestBlocking</code> — used for exactly one
-      thing: removing the browser <code>Origin</code> header from requests to
-      <code>mcp.notion.com</code>, which that endpoint rejects. No request is inspected,
-      recorded or redirected, and the rule applies to no other address.</li>
-    <li>Host access to <code>https://mcp.notion.com/*</code> — the only address the
-      extension is permitted to contact.</li>
-  </ul>
-
-  <h2>This website</h2>
-  <p>
-    slipclip.todorx.dev is a set of static files with no analytics, no cookies and no
-    tracking scripts. Two things about it are still worth stating plainly:
-  </p>
-  <ul>
-    <li>It is hosted on <strong>GitHub Pages</strong>. GitHub receives your IP address and
-      request details as part of serving the page, under
-      <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's Privacy Statement</a>.</li>
-    <li>Its typefaces are served from this same site, not from a third-party font host, so
-      loading the page contacts no one but GitHub.</li>
-  </ul>
-
-  <h2>Children</h2>
-  <p>
-    The extension is not directed at children and collects nothing from anyone, of any age.
-  </p>
-
-  <h2>Changes</h2>
-  <p>
-    If this policy changes, the effective date above changes with it and the previous
-    versions remain readable in the repository's history.
-  </p>
-
-  <h2>Contact</h2>
-  <p>
-    Questions and corrections belong in
-    <a href="https://github.com/todorx/slipclip/issues">the issue tracker</a>, where the
-    answers stay public and searchable.
-  </p>
+  </footer>
 </main>
-
-<footer>
-  <div class="wrap foot">
-    <span>SlipClip for Notion · v1.0.0</span>
-    <span><a href="index.html">Home</a> · <a href="https://github.com/todorx/slipclip">GitHub</a></span>
-    <span>Not affiliated with Notion Labs, Inc.</span>
-  </div>
-</footer>
 
 </body>
 </html>
