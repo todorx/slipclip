@@ -84,13 +84,16 @@ function chosenMapping() {
 
 async function store(dest) {
   await browser.storage.local.set({ destinations: { highlights: dest } });
+  // A highlight clipped before there was anywhere to send it is waiting; it
+  // leaves now rather than at the next capture. Nothing waiting is a no-op.
+  browser.runtime.sendMessage({ type: "flush-highlights" }).catch(() => {});
 }
 
 function showSaved(name, kind) {
   $("saved").hidden = false;
   $("saved").textContent = kind === "page"
     ? `Appending to ${name || "the selected page"}. New highlights are added to the end, grouped by source.`
-    : `Saving into ${name || "the selected database"}. New highlights sync there.`;
+    : `Saving into ${name || "the selected database"}. New highlights are added there, one row each.`;
 }
 
 // Both kinds of destination are valid and they need different things: a

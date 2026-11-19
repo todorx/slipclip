@@ -29,11 +29,11 @@
 - One-click clip: URL + title + selection or full readable article as Markdown.
 - Smart extraction: articles, YouTube/video pages, index/listing pages, or plain links — picked from JSON-LD / `og:type`.
 - Sign in with Notion, nothing to paste — OAuth 2.1 + PKCE via Notion's hosted MCP server, no backend or secret.
-- Save as new page/row or append to an existing page; inline databases discovered automatically.
+- Every clip is a new page inside the page you pick, or a new row in a database; inline databases discovered automatically.
 - Database rows come filled in: URL, tags, and author / site / published date / note when the database has columns named for them. Pages get the site's preview image as cover and its icon.
 - Notes, pinned destinations, an "Already clipped" warning with a link to the earlier page, and an **Open in Notion** link after every clip.
-- Quick clip: `Alt+Shift+C` or **Clip to Notion** in the context menu clips straight to the last destination.
-- Highlights: save passages from the context menu or `Alt+Shift+H`, keep them locally, sync them into a Notion database — or append them to an existing page — when the popup opens.
+- Quick clip: `Alt+Shift+C` or **Clip page to Notion** in the context menu clips straight to the last destination.
+- Highlights: select text, right-click, **Clip highlight to Notion** (or `Alt+Shift+H`) — it goes straight into a Notion database, or onto the end of a page.
 - No build step, no dependencies. Just load `manifest.json`.
 
 ## Quick start
@@ -44,17 +44,16 @@
 
 ## Usage
 
-**How** picks what happens at the destination: *New page inside* creates a child page (or a row, if the destination is a database), *Append to the end* adds the clip to the bottom via `notion-update-page` / `insert_content`. Appending is disabled for databases, which cannot hold loose blocks.
+A clip is always a new page inside the destination you pick — it lands after what is already on that page — or, if the destination is a database, a new row. There is no append mode. Title and note sit behind **Add a title or note**; tags appear when the database has a tags column.
 
 The dropdown loads recent pages on open (`notion-list-recent-pages`); typing searches the workspace (`notion-search`). Selecting a page also lists inline databases inside it, indented with `↳`. Both only ever see pages shared during consent. Pasting a link still works for anything the list misses.
 
 A database destination is read once when you pick it, so the popup can offer its tags as chips (type new ones comma-separated; they are added to the database's tag column for you) and the clip can fill the matching columns. ★ pins the current destination to the top of the list.
 
-**Quick clip** (`Alt+Shift+C`, or **Clip to Notion** in the context menu) skips the popup and clips to wherever you last clipped from it — no note, tags or custom title. The badge shows `…`, then `✓` or `!`; a failure is explained the next time you open the popup. With no destination yet, it opens the popup instead.
+**Quick clip** (`Alt+Shift+C`, or **Clip page to Notion** in the context menu) skips the popup and clips to the destination you last picked in it — no note, tags or custom title. The badge shows `…`, then `✓` or `!`; a failure is explained the next time you open the popup. With no destination yet, it opens the popup instead.
 
-**Highlights** accumulate instead of being clipped one at a time. Select text, then use the context menu or `Alt+Shift+H`; the badge counts what is waiting. Nothing is sent while you read — the queue drains into Notion the next time the popup opens, from the **Highlights** disclosure at the bottom of the popup. Pick the destination in **Open Settings**: a database gets one row per passage, a page gets them appended as quotes grouped by source, or let it create a database for you. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
+**Highlights** are for the passage, not the page. Select text and right-click → **Clip highlight to Notion** (the item only appears when text is selected), or press `Alt+Shift+H`. It is sent to Notion straight away; the badge shows `…`, then `✓` or `!`. Pick where highlights go in **Highlight settings**, the link at the bottom of the popup: a database gets one row per passage, a page gets them appended as quotes grouped by source, or let it create a database for you. The first time, with nowhere to send it yet, the right-click opens Settings and the highlight goes out the moment you save a destination. If a send fails, the highlight waits, the badge keeps its count, and the popup retries when you open it. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
 
-**Save as** resets to *A new page inside* every popup open — appending is a per-clip decision, never sticky.
 
 A text selection outranks everything: highlight something and the clip is that quote alone. Article bodies cap at 60,000 characters and are marked when truncated.
 

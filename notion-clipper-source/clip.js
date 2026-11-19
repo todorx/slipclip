@@ -4,7 +4,7 @@
 
 import { extractPage } from "./extract.js";
 import { mcpTool, normalizeId } from "./mcp.js";
-import { applyMapping, canonicalUrl, matchProperties, parseDataSourceId, parseProperties, quoteLines, siteOf } from "./highlights.js";
+import { applyMapping, canonicalUrl, flushPending, highlightsMarkdown, matchProperties, parseDataSourceId, parseProperties, pending, quoteLines, readHighlights, siteOf } from "./highlights.js";
 
 export const CLIPS_KEY = "clipped";
 const CLIPS_CAP = 500;
@@ -29,9 +29,7 @@ export function formatDuration(iso) {
 export const noteCallout = (note) =>
   `<callout icon="💬">\n\t${note.trim().replace(/[<>]/g, "\\$&").replace(/\r?\n/g, "<br>")}\n</callout>`;
 
-// `heading` turns the source line into an H2 - appended clips need a visible
-// break between them, a new page does not.
-export function buildMarkdown(page, { heading = false } = {}) {
+export function buildMarkdown(page) {
   const { url, title, description, selection, siteName, author, published, duration, body, truncated, kind, note } = page;
   const safeUrl = String(url || "").replace(/\(/g, "%28").replace(/\)/g, "%29");
   const link = title ? `[${title.replace(/[[\]]/g, "\\$&")}](${safeUrl})` : url;
@@ -45,7 +43,7 @@ export function buildMarkdown(page, { heading = false } = {}) {
   else meat = body || description;
 
   return [
-    heading ? `## ${link}` : link,
+    link,
     facts && `*${facts}*`,
     note?.trim() && noteCallout(note),
     meat,
@@ -109,8 +107,7 @@ export function addTagsStatement(column, tags) {
 }
 
 // Where the clip landed. notion-create-pages answers with the new page; when no
-// page can be read out of the answer - or for an append - the destination itself
-// is the link.
+// page can be read out of the answer, the destination itself is the link.
 export function notionLink(raw, fallbackId) {
   try {
     const page = JSON.parse(raw)?.pages?.[0];
@@ -196,89 +193,117 @@ export function readDestination(id) {
   return destinations.get(id);
 }
 
-// One clip, start to finish. `known` is the destination's kind when the picker
-// said so; a pasted link leaves it empty and Notion's error settles it. Returns
-// where the clip landed and, once settled, what the destination turned out to be.
-export async function clipTo(tabId, { parentId, known = "", mode = "child", title = "", note = "", tags = [] }) {
+// One clip, start to finish: a new page inside a page (Notion puts it after
+// what is already there) or a new row in a database. `known` is the
+// destination's kind when the picker said so; when it is empty - a destination
+// stored before kinds were remembered - Notion's error settles it. Returns where
+// the clip landed and, once settled, what the destination turned out to be.
+export async function clipTo(tabId, { parentId, known = "", title = "", note = "", tags = [] }) {
   const tab = await getTabData(tabId);
   const page = { ...tab, title: (title.trim() || tab.title || "Untitled clip").slice(0, 100), note };
   let raw = "";
   let kind = known;
 
-  if (mode === "append") {
-    // allow_async defaults true here, which would answer with a task instead of
-    // a result. A clip is small enough to just wait for.
-    await mcpTool("notion-update-page", {
-      page_id: parentId,
-      command: "insert_content",
-      content: buildMarkdown(page, { heading: true }),
-      position: { type: "end" },
-      allow_async: false
-    });
-  } else {
-    const looks = {
-      content: buildMarkdown(page),
-      ...(tab.icon && { icon: tab.icon }),
-      ...(tab.image && { cover: tab.image })
-    };
-    const createPage = async (parent, properties) => {
-      try {
-        return await mcpTool("notion-create-pages", {
+  const looks = {
+    content: buildMarkdown(page),
+    ...(tab.icon && { icon: tab.icon }),
+    ...(tab.image && { cover: tab.image })
+  };
+  const createPage = async (parent, properties) => {
+    try {
+      return await mcpTool("notion-create-pages", {
+        parent,
+        pages: [{ properties, ...looks }],
+        allow_async: false
+      });
+    } catch (e) {
+      // An icon or cover URL Notion rejects (unsupported format, >2000 chars,
+      // etc.) should never stop the page itself from being saved.
+      if ((looks.icon || looks.cover) && /icon|cover/i.test(e.message)) {
+        return mcpTool("notion-create-pages", {
           parent,
-          pages: [{ properties, ...looks }],
+          pages: [{ properties, content: looks.content }],
           allow_async: false
         });
-      } catch (e) {
-        // An icon or cover URL Notion rejects (unsupported format, >2000 chars,
-        // etc.) should never stop the page itself from being saved.
-        if ((looks.icon || looks.cover) && /icon|cover/i.test(e.message)) {
-          return mcpTool("notion-create-pages", {
-            parent,
-            pages: [{ properties, content: looks.content }],
-            allow_async: false
-          });
-        }
-        throw e;
       }
-    };
-    // A database with more than one data source refuses database_id, and the
-    // fetch that reads the columns names the source anyway.
-    const intoDatabase = async () => {
-      let schema = await readDestination(parentId);
-      const source = parseDataSourceId(schema);
-      kind = "database";
+      throw e;
+    }
+  };
+  // A database with more than one data source refuses database_id, and the
+  // fetch that reads the columns names the source anyway.
+  const intoDatabase = async () => {
+    let schema = await readDestination(parentId);
+    const source = parseDataSourceId(schema);
+    kind = "database";
 
-      // The options are restated from a fresh read, never the cached one: an
-      // option added in Notion since the popup opened would otherwise be dropped.
-      if (addTagsStatement(tagsColumn(parseProperties(schema)), tags)) {
-        destinations.delete(parentId);
-        schema = await readDestination(parentId);
-        const statements = addTagsStatement(tagsColumn(parseProperties(schema)), tags);
-        if (statements) await mcpTool("notion-update-data-source", { data_source_id: source || parentId, statements });
-        destinations.delete(parentId);
-      }
+    // The options are restated from a fresh read, never the cached one: an
+    // option added in Notion since the popup opened would otherwise be dropped.
+    if (addTagsStatement(tagsColumn(parseProperties(schema)), tags)) {
+      destinations.delete(parentId);
+      schema = await readDestination(parentId);
+      const statements = addTagsStatement(tagsColumn(parseProperties(schema)), tags);
+      if (statements) await mcpTool("notion-update-data-source", { data_source_id: source || parentId, statements });
+      destinations.delete(parentId);
+    }
 
-      return createPage(
-        source ? { data_source_id: source } : { database_id: parentId },
-        clipProperties(page, parseProperties(schema), { tags })
-      );
-    };
+    return createPage(
+      source ? { data_source_id: source } : { database_id: parentId },
+      clipProperties(page, parseProperties(schema), { tags })
+    );
+  };
 
-    if (known === "database" || known === "data_source") raw = await intoDatabase();
-    else {
-      try {
-        raw = await createPage({ page_id: parentId }, { title: page.title });
-        kind = "page";
-      } catch (e) {
-        // A pasted link doesn't say which kind it is. Notion's error does, so one
-        // retry beats making the user classify it.
-        if (known || !/not a (page|database)|is a database|is a data.?source/i.test(e.message)) throw e;
-        raw = await intoDatabase();
-      }
+  if (known === "database" || known === "data_source") raw = await intoDatabase();
+  else {
+    try {
+      raw = await createPage({ page_id: parentId }, { title: page.title });
+      kind = "page";
+    } catch (e) {
+      // An unclassified destination doesn't say which kind it is. Notion's
+      // error does, so one retry beats making the user classify it.
+      if (known || !/not a (page|database)|is a database|is a data.?source/i.test(e.message)) throw e;
+      raw = await intoDatabase();
     }
   }
 
   const link = notionLink(raw, parentId);
   await browser.storage.local.set({ [CLIPS_KEY]: rememberClip(await readClips(), tab.url, link) });
   return { link, kind };
+}
+
+// Sends every waiting highlight to the destination chosen in Settings: a
+// database gets a row per passage, a page gets the passages appended as quotes.
+// The worker calls it right after a capture, which is what makes a right-click a
+// clip; the popup calls it to retry. The storage choreography lives in
+// highlights.js either way - flushPending takes the writer, so only the call
+// inside it changes. Returns how many were sent.
+export async function flushHighlights() {
+  if (!pending(await readHighlights()).length) return 0;
+
+  const { destinations } = await browser.storage.local.get("destinations");
+  const dest = destinations?.highlights;
+  // A config stored before pages were allowed carries no kind, and could only
+  // ever have been a database.
+  const kind = dest?.kind ?? "database";
+  // `code` lets the worker tell "nowhere to send it yet" from a failed send.
+  const unset = () => Object.assign(new Error("No highlights destination set. Pick one in Highlight settings."), { code: "no-destination" });
+
+  if (kind === "page") {
+    if (!dest?.pageId) throw unset();
+    return flushPending((batch) => mcpTool("notion-update-page", {
+      page_id: dest.pageId,
+      command: "insert_content",
+      content: highlightsMarkdown(batch),
+      position: { type: "end" },
+      // allow_async defaults true, which answers with a task rather than a
+      // result - and the batch is only stamped once this returns.
+      allow_async: false
+    }));
+  }
+
+  if (!dest?.dataSourceId) throw unset();
+  if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Fix it in Highlight settings.");
+  return flushPending((batch) => mcpTool("notion-create-pages", {
+    parent: { data_source_id: dest.dataSourceId },
+    pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
+  }));
 }
