@@ -71,12 +71,6 @@ export function prune(list, cap = SYNCED_CAP) {
   return list.filter((h) => !h.synced || ++kept <= cap);
 }
 
-export function groupBySource(list) {
-  const groups = new Map();
-  for (const h of list) groups.set(h.canonical, [...(groups.get(h.canonical) || []), h]);
-  return groups;
-}
-
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 // Every line prefixed, blanks included, so a multi-line quote stays one
@@ -154,8 +148,8 @@ export function parseProperties(raw) {
   return out;
 }
 
-// Highlights can be saved into a database or appended to an ordinary page, so
-// a fetch has to say which one it got. Read it from metadata, not from whether
+// Highlights can go into a database or under an ordinary page, so a fetch has
+// to say which one it got. Read it from metadata, not from whether
 // a collection:// id turns up: a page holding an inline database carries one
 // too, and would be taken for a database.
 export function parseFetchKind(raw) {
@@ -167,25 +161,21 @@ export function parseFetchKind(raw) {
   return m ? m[1] : null;
 }
 
-// The page destination's payload: one heading per source, the passages quoted
-// beneath it, so passages stacked on one page stay separable.
-// ponytail: every sync appends a fresh section, so two syncs from one article
-// leave two headings. Merging means fetching the page, parsing its blocks and
-// inserting mid-document - a round trip and a parser, for cosmetics.
-export function highlightsMarkdown(list) {
-  const sections = [];
-  for (const [canonical, items] of groupBySource(list)) {
-    const first = items[0];
-    const title = first.title || first.site || canonical;
-    const link = `[${String(title).replace(/[[\]]/g, "\\$&")}](${first.url || canonical})`;
-    const facts = [first.site, first.author, first.created && day(first.created)].filter(Boolean).join(" · ");
-    sections.push([
-      `## ${link}`,
-      facts && `*${facts}*`,
-      ...items.map((h) => quoteLines(h.truncated ? h.text + "…" : h.text))
-    ].filter(Boolean).join("\n\n"));
-  }
-  return sections.join("\n\n");
+// A highlight is a page of its own, the way a clip is: the passage, shortened to
+// a line, is the title, and the page holds the whole quote and where it came from.
+export function highlightPage(h) {
+  const text = String(h.text ?? "");
+  const flat = text.replace(/\s+/g, " ").trim();
+  const title = flat.length > 80 ? flat.slice(0, 79).trimEnd() + "…" : flat;
+
+  // Notion's markup reads a bare < as the start of a tag.
+  const quote = quoteLines((h.truncated ? text + "…" : text).replace(/</g, "\\<"));
+  const label = String(h.title || h.site || h.canonical || h.url || "").replace(/[[\]]/g, "\\$&");
+  const href = String(h.url || "").replace(/\(/g, "%28").replace(/\)/g, "%29");
+  const link = href ? `[${label || href}](${href})` : label;
+  const source = [link, h.site, h.author, h.created && day(h.created)].filter(Boolean).join(" · ");
+
+  return { title: title || "Highlight", content: [quote, source && `— ${source}`].filter(Boolean).join("\n\n") };
 }
 
 export function parseDataSourceId(raw) {

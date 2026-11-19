@@ -4,7 +4,7 @@
 
 import { extractPage } from "./extract.js";
 import { mcpTool, normalizeId } from "./mcp.js";
-import { applyMapping, canonicalUrl, flushPending, highlightsMarkdown, matchProperties, parseDataSourceId, parseProperties, pending, quoteLines, readHighlights, siteOf } from "./highlights.js";
+import { applyMapping, canonicalUrl, flushPending, highlightPage, matchProperties, parseDataSourceId, parseFetchKind, parseProperties, pending, quoteLines, readHighlights, siteOf } from "./highlights.js";
 
 export const CLIPS_KEY = "clipped";
 const CLIPS_CAP = 500;
@@ -270,40 +270,57 @@ export async function clipTo(tabId, { parentId, known = "", title = "", note = "
   return { link, kind };
 }
 
-// Sends every waiting highlight to the destination chosen in Settings: a
-// database gets a row per passage, a page gets the passages appended as quotes.
-// The worker calls it right after a capture, which is what makes a right-click a
-// clip; the popup calls it to retry. The storage choreography lives in
-// highlights.js either way - flushPending takes the writer, so only the call
-// inside it changes. Returns how many were sent.
+// Where highlights go: the destination chosen in Settings, if one was ever set
+// there to send them somewhere else, and otherwise the one picked in the popup -
+// so there is nothing to set up. Null when there is neither.
+async function highlightsDestination() {
+  const { destinations, parent, parentType } = await browser.storage.local.get(["destinations", "parent", "parentType"]);
+  const own = destinations?.highlights;
+  if (own?.pageId || own?.dataSourceId) return own;
+
+  const id = normalizeId(parent);
+  if (!id) return null;
+  if (parentType === "page") return { kind: "page", pageId: id };
+
+  // A database, or a destination whose kind was never settled: read it once, the
+  // way a clip does, and match its columns the way the options page would.
+  const raw = await readDestination(id);
+  if (parseFetchKind(raw) === "page") return { kind: "page", pageId: id };
+  const dataSourceId = parseDataSourceId(raw);
+  return dataSourceId ? { kind: "database", dataSourceId, mapping: matchProperties(parseProperties(raw)) } : null;
+}
+
+// Sends every waiting highlight to Notion, each as a new page - a child page of a
+// page destination, a row of a database. The worker calls it right after a
+// capture, which is what makes a right-click a clip; the popup calls it to retry.
+// The storage choreography lives in highlights.js either way - flushPending takes
+// the writer, so only the call inside it changes. Returns how many were sent.
 export async function flushHighlights() {
   if (!pending(await readHighlights()).length) return 0;
 
-  const { destinations } = await browser.storage.local.get("destinations");
-  const dest = destinations?.highlights;
+  const dest = await highlightsDestination();
+  // `code` lets the worker tell "nowhere to send it yet" from a failed send.
+  if (!dest) throw Object.assign(new Error("No destination yet. Pick one in the popup."), { code: "no-destination" });
+
   // A config stored before pages were allowed carries no kind, and could only
   // ever have been a database.
-  const kind = dest?.kind ?? "database";
-  // `code` lets the worker tell "nowhere to send it yet" from a failed send.
-  const unset = () => Object.assign(new Error("No highlights destination set. Pick one in Highlight settings."), { code: "no-destination" });
-
-  if (kind === "page") {
-    if (!dest?.pageId) throw unset();
-    return flushPending((batch) => mcpTool("notion-update-page", {
-      page_id: dest.pageId,
-      command: "insert_content",
-      content: highlightsMarkdown(batch),
-      position: { type: "end" },
+  if ((dest.kind ?? "database") === "page") {
+    return flushPending((batch) => mcpTool("notion-create-pages", {
+      parent: { page_id: dest.pageId },
+      pages: batch.map((h) => {
+        const { title, content } = highlightPage(h);
+        return { properties: { title }, content };
+      }),
       // allow_async defaults true, which answers with a task rather than a
       // result - and the batch is only stamped once this returns.
       allow_async: false
     }));
   }
 
-  if (!dest?.dataSourceId) throw unset();
-  if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Fix it in Highlight settings.");
+  if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Fix it under Send highlights elsewhere.");
   return flushPending((batch) => mcpTool("notion-create-pages", {
     parent: { data_source_id: dest.dataSourceId },
-    pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
+    pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) })),
+    allow_async: false
   }));
 }

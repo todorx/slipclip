@@ -144,9 +144,11 @@ async function captureNow({ text, url, title }) {
   const sent = await sendHighlights();
   // Nothing was waiting, so this passage was already in Notion - say so.
   if (!added && sent.ok && !sent.sent) return flash("✓", "#2e7d32");
-  // No destination yet: Settings is where to pick one. The highlight waits, and
-  // is sent the moment the choice is saved.
-  if (sent.setup) await browser.runtime.openOptionsPage();
+  // No destination yet. The popup is where one is picked, so it opens right here
+  // rather than in a tab; the highlight waits, and the popup sends it the moment
+  // a choice is made. Firefox only opens a popup inside the user's gesture, which
+  // the awaits above may have outlived - the popup then explains when next opened.
+  if (sent.setup && browser.action.openPopup) await browser.action.openPopup().catch(() => {});
 }
 
 // Sends everything waiting. A failure leaves it queued: the badge keeps its
