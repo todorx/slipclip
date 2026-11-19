@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { pkceChallenge, hasWebAuthFlow, redirectUri, completeSignIn, accessToken } from "./auth.js";
 import { normalizeId, parseResults, parseSSE, errorText, unwrapPayload, useTokenSource } from "./mcp.js";
 import { optionLabel, parseChildDatabases, togglePin } from "./popup.js";
-import { buildMarkdown, formatDuration, clipProperties, tagsColumn, notionLink, rememberClip, findClip, noteCallout, addTagsStatement, getTabData, clipTo } from "./clip.js";
+import { buildMarkdown, formatDuration, clipProperties, tagsColumn, notionLink, rememberClip, findClip, noteCallout, addTagsStatement, getTabData, clipTo, flushHighlights } from "./clip.js";
 import { extractPage } from "./extract.js";
-import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightsMarkdown, coalesce, flushPending, readHighlights, writeHighlights } from "./highlights.js";
+import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightsMarkdown, flushPending, prune, readHighlights, writeHighlights } from "./highlights.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -121,13 +121,7 @@ assert.equal(formatDuration("PT2H"), "2:00:00");
 assert.equal(formatDuration(""), "", "missing duration renders nothing");
 assert.equal(formatDuration("nonsense"), "", "unparseable duration renders nothing");
 
-// Append mode: the source line becomes an H2 so stacked clips stay separable.
-const appended = buildMarkdown(
-  { url: "https://example.com/a", title: "Example", description: "Desc.", selection: "" },
-  { heading: true }
-);
-assert.ok(appended.startsWith("## [Example](https://example.com/a)"), "heading mode renders an H2 link");
-assert.ok(!picked.startsWith("##"), "default stays a plain link");
+assert.ok(!picked.startsWith("##"), "the source line is a plain link, not a heading");
 
 const bare = buildMarkdown({ url: "https://example.com/a", title: "Example", description: "", selection: "" });
 assert.match(bare, /https:\/\/example\.com\/a/, "URL survives with nothing else to say");
@@ -424,7 +418,7 @@ assert.equal(
 assert.equal(
   notionLink("", "22222222-2222-4222-8222-222222222222"),
   "https://www.notion.so/22222222222242228222222222222222",
-  "an append links to the destination"
+  "an answer with no readable page links to the destination"
 );
 assert.equal(
   notionLink('<page url="https://app.notion.com/p/abc">', null),
@@ -479,19 +473,6 @@ const inlineSchema = 'CREATE TABLE ("Highlight" TITLE, "URL" URL, "Highlighted" 
 assert.equal(parseProperties(inlineSchema).length, 4, "a single-line schema yields every column");
 assert.equal(parseProperties(inlineSchema)[3].name, "Note");
 
-// coalesce: a second sync while one is in flight joins it rather than starting
-// a second write of the same queue.
-let runs = 0;
-const slow = coalesce(async () => {
-  runs++;
-  await new Promise((r) => setTimeout(r, 5));
-  return "done";
-});
-assert.deepEqual(await Promise.all([slow(), slow()]), ["done", "done"], "both callers get the result");
-assert.equal(runs, 1, "but the work happens once");
-await slow();
-assert.equal(runs, 2, "and once it settles, the next call runs again");
-
 // flushPending: the storage choreography, exercised without a network.
 const fStore = {};
 globalThis.browser = { storage: { local: {
@@ -534,6 +515,20 @@ const sizes = [];
 await flushPending(async (batch) => { sizes.push(batch.length); }, { chunkSize: 2 });
 assert.deepEqual(sizes, [2, 2, 1], "a large queue is sent in chunks");
 assert.equal(pending(fStore.highlights).length, 0, "and all of it is stamped");
+
+// Sent highlights are only a record of what was sent, so they are capped - but
+// a waiting one is never dropped, however old.
+const mixed = [
+  { key: "w1", synced: null },
+  ...Array.from({ length: 5 }, (_, i) => ({ key: `s${i}`, synced: 1 })),
+  { key: "w2", synced: null }
+];
+assert.deepEqual(prune(mixed, 3).map((h) => h.key), ["w1", "s0", "s1", "s2", "w2"],
+  "the newest sent ones stay, the oldest go, and both waiting ones survive");
+assert.equal(prune(mixed).length, mixed.length, "under the cap nothing is dropped");
+fStore.highlights = Array.from({ length: 600 }, (_, i) => ({ key: `k${i}`, synced: null }));
+await flushPending(async () => {}, { chunkSize: 1000 });
+assert.equal(fStore.highlights.length, 500, "a flush leaves at most 500 sent highlights behind");
 
 delete globalThis.browser;
 
@@ -611,6 +606,27 @@ globalThis.document.querySelector = (sel) =>
 const dressed = extractPage();
 assert.equal(dressed.image, "https://example.com/img/cover.png", "a relative og:image resolves against the page");
 assert.equal(dressed.icon, "", "a data: icon is not something Notion can show");
+globalThis.document.querySelector = realQuery;
+
+// YouTube's channel is a Person inside the video's microdata: the wrapper span
+// has no content and no text, and the name sits in a nested <link>. Found by
+// running the real extractor over a saved YouTube page.
+const attr = (map) => (n) => map[n] ?? null;
+const channel = {
+  hasAttribute: (n) => n === "itemscope",
+  getAttribute: attr({}),
+  textContent: "",
+  querySelector: (sel) => sel === '[itemprop="name"]' ? { getAttribute: attr({ content: "Rick Astley" }), textContent: "" } : null
+};
+globalThis.document.querySelector = (sel) =>
+  sel === '[itemtype*="VideoObject" i]' ? {}
+  : sel === '[itemprop="author"]' ? channel
+  : sel === '[itemprop="duration"]' ? { getAttribute: attr({ content: "PT3M34S" }), textContent: "" }
+  : null;
+const tube = extractPage();
+assert.equal(tube.kind, "video");
+assert.equal(tube.author, "Rick Astley", "a nested Person name is read, not the empty wrapper");
+assert.equal(tube.duration, "PT3M34S", "plain microdata values still read as before");
 globalThis.document.querySelector = realQuery;
 
 const img = (attrs) => ({ getAttribute: (name) => attrs[name] ?? null });
@@ -862,6 +878,78 @@ assert.ok(wiki.includes("[Python](https://en.wikipedia.org/wiki/Python_%28progra
   assert.ok("cover" in calls[0].arguments.pages[0], "first attempt included cover");
   assert.ok(!("cover" in calls[1].arguments.pages[0]) && !("icon" in calls[1].arguments.pages[0]), "retry omitted icon and cover");
   assert.equal(clipStore.clipped.length, 1, "clip history recorded the save");
+
+  globalThis.fetch = realFetch;
+  delete globalThis.browser;
+}
+
+// 8. flushHighlights: where a waiting highlight goes depends on the destination.
+{
+  const store = {};
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  useTokenSource(async () => "tok");
+  globalThis.browser = { storage: { local: {
+    get: async (k) => ({ [k]: store[k] }),
+    set: async (o) => Object.assign(store, o)
+  } } };
+  globalThis.fetch = async (_url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.method === "initialize") {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+        status: 200, headers: { "Content-Type": "application/json", "Mcp-Session-Id": "s1" }
+      });
+    }
+    if (req.method === "notifications/initialized") return new Response(null, { status: 202 });
+    calls.push(req.params);
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ text: "{}" }] } }), {
+      status: 200, headers: { "Content-Type": "application/json" }
+    });
+  };
+  const waiting = () => [{
+    key: "k1", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A",
+    site: "example.com", text: "A passage.", created: Date.UTC(2026, 10, 19), synced: null
+  }];
+
+  store.highlights = [];
+  assert.equal(await flushHighlights(), 0, "nothing waiting sends nothing");
+  assert.equal(calls.length, 0, "and does not even look for a destination");
+
+  store.highlights = waiting();
+  await assert.rejects(() => flushHighlights(), (e) => e.code === "no-destination" && /Highlight settings/.test(e.message),
+    "no destination is reported as such, so the worker can open Settings");
+  assert.equal(calls.length, 0, "and nothing is sent");
+  assert.equal(pending(store.highlights).length, 1, "the highlight stays queued");
+
+  store.destinations = { highlights: { kind: "database", dataSourceId: "55555555-5555-4555-8555-555555555555" } };
+  await assert.rejects(() => flushHighlights(), /No passage column mapped/, "a database with no passage column is not guessed at");
+
+  store.destinations = { highlights: {
+    kind: "database",
+    dataSourceId: "55555555-5555-4555-8555-555555555555",
+    mapping: { text: { name: "Highlight", type: "TITLE" }, url: { name: "URL", type: "URL" } }
+  } };
+  assert.equal(await flushHighlights(), 1);
+  assert.equal(calls[0].name, "notion-create-pages", "a database gets a row");
+  assert.deepEqual(calls[0].arguments.parent, { data_source_id: "55555555-5555-4555-8555-555555555555" });
+  assert.equal(calls[0].arguments.pages[0].properties.Highlight, "A passage.", "the passage goes in the mapped column");
+  assert.equal(calls[0].arguments.pages[0].properties["userDefined:URL"], "https://example.com/a", "a URL column is spelled the way Notion wants");
+  assert.equal(pending(store.highlights).length, 0, "and it is stamped as sent");
+
+  store.highlights = waiting();
+  store.destinations = { highlights: { kind: "page", pageId: "66666666-6666-4666-8666-666666666666" } };
+  assert.equal(await flushHighlights(), 1);
+  assert.equal(calls[1].name, "notion-update-page", "a page gets the passage appended");
+  assert.equal(calls[1].arguments.page_id, "66666666-6666-4666-8666-666666666666");
+  assert.equal(calls[1].arguments.command, "insert_content");
+  assert.deepEqual(calls[1].arguments.position, { type: "end" }, "at the end");
+  assert.equal(calls[1].arguments.allow_async, false, "and waits for the result before stamping");
+  assert.ok(calls[1].arguments.content.startsWith("## [Article A](https://example.com/a)"));
+
+  store.highlights = waiting();
+  store.destinations = { highlights: { dataSourceId: "55555555-5555-4555-8555-555555555555", mapping: { text: { name: "Highlight", type: "TITLE" } } } };
+  await flushHighlights();
+  assert.equal(calls[2].name, "notion-create-pages", "a config stored before pages were allowed is a database");
 
   globalThis.fetch = realFetch;
   delete globalThis.browser;

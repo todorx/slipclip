@@ -1,5 +1,5 @@
 import { normalizeId, parseResults, unwrapPayload, mcpTool, ask } from "./mcp.js";
-import { groupBySource, pending, coalesce, flushPending, readHighlights, writeHighlights, applyMapping, highlightsMarkdown, parseProperties } from "./highlights.js";
+import { pending, readHighlights, parseProperties, parseFetchKind } from "./highlights.js";
 import { readDestination, tagsColumn, readClips, findClip } from "./clip.js";
 
 const $ = (id) => document.getElementById(id);
@@ -68,15 +68,29 @@ function setOptions(labels) {
 let listed = [];
 let pinned = [];
 
-function renderPicker(selectedId) {
+// Where clips go. It is kept here and in storage (parent, parentType,
+// parentTitle), and the dropdown only displays it - so it survives a search
+// that does not list it, and a popup that is closed and reopened.
+let dest = { id: "", type: "", title: "" };
+
+const itemFor = (id) => [...pinned, ...listed, dest].find((it) => it.id === id);
+
+function renderPicker() {
   const pinnedIds = new Set(pinned.map((p) => p.id));
+  const rest = listed.filter((it) => !pinnedIds.has(it.id));
+  // The chosen destination always has a row to sit in, even when the list that
+  // loaded - recents, or a search for something else - leaves it out.
+  const own = dest.id && !pinnedIds.has(dest.id) && !rest.some((it) => it.id === dest.id) ? [dest] : [];
   setOptions([
-    [listed.length || pinned.length ? "Pick a destination" : "No results", ""],
+    [pinned.length || rest.length || own.length ? "Pick a destination" : "No results", ""],
     ...pinned.map((it) => ["★ " + optionLabel(it), it.id, it.type]),
-    ...listed.filter((it) => !pinnedIds.has(it.id)).map((it) => [(it.inside ? "↳ " : "") + optionLabel(it), it.id, it.type])
+    ...own.map((it) => [optionLabel(it), it.id, it.type]),
+    ...rest.map((it) => [(it.inside ? "↳ " : "") + optionLabel(it), it.id, it.type])
   ]);
-  if (selectedId) $("picker").value = selectedId;
+  $("picker").value = dest.id;
 }
+
+const NOTHING = "Nothing found. Clips reach only the pages you shared on Notion's consent screen.";
 
 async function loadPicker(query) {
   setOptions([["Loading...", ""]]);
@@ -86,6 +100,8 @@ async function loadPicker(query) {
       : await mcpTool("notion-list-recent-pages", { limit: 25 });
     listed = parseResults(text);
     renderPicker();
+    if (!listed.length) say(NOTHING);
+    else if ($("status").textContent === NOTHING) say("");
   } catch (e) {
     // Pins are stored locally, so they stay usable when the list cannot load.
     listed = [];
@@ -94,28 +110,52 @@ async function loadPicker(query) {
   }
 }
 
-const currentId = () => normalizeId($("parent").value);
-
 function paintPin() {
-  const on = pinned.some((p) => p.id === currentId());
+  const on = pinned.some((p) => p.id === dest.id);
   $("pin").setAttribute("aria-pressed", String(on));
   $("pin").textContent = on ? "★" : "☆";
   $("pin").title = on ? "Unpin this destination" : "Pin this destination";
 }
 
 async function pinCurrent() {
-  const id = currentId();
-  if (!id) return say("Pick a destination to pin first.");
-  const known = [...pinned, ...listed].find((it) => it.id === id);
-  // A pasted link has no title until Notion is asked for one.
-  let title = known?.title;
-  if (!title && !pinned.some((p) => p.id === id)) {
-    try { title = JSON.parse(await readDestination(id))?.title; } catch { /* the label falls back to Untitled */ }
-  }
-  pinned = togglePin(pinned, { id, title: title || "", type: $("parent").dataset.type || known?.type || "" });
+  if (!dest.id) return say("Pick a destination to pin first.");
+  pinned = togglePin(pinned, { id: dest.id, title: dest.title, type: dest.type });
   await browser.storage.local.set({ pinned });
-  renderPicker(id);
+  renderPicker();
   paintPin();
+}
+
+// The dropdown's choice becomes the destination, and is remembered at once -
+// a popup that closes before anything is clipped should still reopen on it.
+function pick(item) {
+  dest = { id: item.id, type: item.type || "", title: item.title || "" };
+  browser.storage.local.set({ parent: dest.id, parentType: dest.type, parentTitle: dest.title });
+  paintPin();
+  showTags();
+  if (dest.type === "page") expandPage(dest.id);
+}
+
+// A destination stored before titles and kinds were kept has neither, so the
+// dropdown would call it "Untitled (unknown)". The lists usually know both;
+// Notion is asked for whatever is left.
+async function settleDest() {
+  const id = dest.id;
+  if (!id || (dest.title && dest.type)) return;
+  const known = [...pinned, ...listed].find((it) => it.id === id);
+  let title = dest.title || known?.title || "";
+  let type = dest.type || known?.type || "";
+  if (!title || !type) {
+    try {
+      const raw = await readDestination(id);
+      if (!title) { try { title = JSON.parse(raw)?.title || ""; } catch { /* markup, not JSON */ } }
+      if (!type) type = parseFetchKind(raw) || "";
+    } catch { /* the label stays as it is */ }
+  }
+  if (dest.id !== id) return;
+  dest = { id, title, type };
+  await browser.storage.local.set({ parentTitle: title, parentType: type });
+  renderPicker();
+  showTags();
 }
 
 const isDatabaseType = (t) => t === "database" || t === "data_source";
@@ -123,12 +163,12 @@ const isDatabaseType = (t) => t === "database" || t === "data_source";
 // Tags are offered only where there is a tags column to put them in.
 async function showTags() {
   $("tagbox").hidden = true;
-  const id = currentId();
-  if (!id || !isDatabaseType($("parent").dataset.type)) return;
+  const { id, type } = dest;
+  if (!id || !isDatabaseType(type)) return;
   try {
     const column = tagsColumn(parseProperties(await readDestination(id)));
     // The destination may have changed while Notion was answering.
-    if (!column || currentId() !== id) return;
+    if (!column || dest.id !== id) return;
     $("taglab").textContent = column.name;
     $("tagopts").replaceChildren(...(column.options || []).map(({ name }) => {
       const chip = document.createElement("label");
@@ -170,12 +210,12 @@ async function expandPage(id, { silent = false } = {}) {
     // restored from storage, for instance. Children go last in that case.
     const at = listed.findIndex((it) => it.id === id);
     listed.splice(at === -1 ? listed.length : at + 1, 0, ...kids.map((k) => ({ ...k, inside: id })));
-    renderPicker(id);
+    renderPicker();
 
     // The select still shows the parent, so say where the new entries went,
     // without clobbering an existing error or "Already clipped" notice.
     if (!silent || !$("status").textContent) {
-      say(`${kids.length} database${kids.length > 1 ? "s" : ""} inside. Open Destination to pick one.`);
+      say(`${kids.length} database${kids.length > 1 ? "s" : ""} inside. Open the list to pick one.`);
     }
   } catch (e) {
     if (!silent) say("Error: " + e.message, "error");
@@ -187,14 +227,10 @@ async function expandPage(id, { silent = false } = {}) {
 const activeTab = async () => (await browser.tabs.query({ active: true, currentWindow: true }))[0];
 
 async function clip() {
-  const parentId = currentId();
-  if (!parentId) throw new Error("Pick a destination, or paste a Notion link.");
-  const known = $("parent").dataset.type || "";
-  await browser.storage.local.set({ parent: $("parent").value, parentType: known });
+  if (!dest.id) throw new Error("Pick a destination first.");
 
   const tab = await activeTab();
   if (!tab?.id) throw new Error("No active tab to clip.");
-  const mode = $("mode").disabled ? "child" : $("mode").value;
 
   // Run in the background worker so closing the popup mid-request never aborts
   // the save. If the popup stays open, handle the result right here.
@@ -202,9 +238,8 @@ async function clip() {
     type: "clip",
     tabId: tab.id,
     options: {
-      parentId,
-      known,
-      mode,
+      parentId: dest.id,
+      known: dest.type,
       title: $("title").value,
       note: $("note").value,
       tags: selectedTags()
@@ -216,124 +251,28 @@ async function clip() {
   }
   const { link, kind } = r;
 
-  // A pasted link is settled now, so the next open knows what it points at.
-  if (kind && kind !== known) {
-    $("parent").dataset.type = kind;
-    syncMode();
+  // A destination of unknown kind is settled now (the worker stored it), so the
+  // tags can appear without reopening.
+  if (kind && kind !== dest.type) {
+    dest.type = kind;
     showTags();
   }
-  return { link, mode };
-}
-
-// ---------- highlights ----------
-
-function renderHighlights(list) {
-  const box = $("hlist");
-  box.replaceChildren();
-  if (!list.length) {
-    box.textContent = "No highlights yet. Select some text and press Alt+Shift+H.";
-    return;
-  }
-
-  // The list is newest-first and groupBySource keeps insertion order, so the
-  // source you just saved into is always the first group and each group reads
-  // newest-first too.
-  for (const [canonical, items] of groupBySource(list)) {
-    const head = document.createElement("div");
-    head.className = "hgroup";
-    head.textContent = items[0].title || items[0].site || canonical;
-    box.append(head);
-
-    for (const h of items) {
-      const row = document.createElement("div");
-      row.className = "hitem";
-
-      const quote = document.createElement("q");
-      quote.textContent = h.truncated ? h.text + "…" : h.text;
-
-      const source = document.createElement("cite");
-      source.textContent = h.synced ? "synced" : "waiting";
-
-      const del = document.createElement("button");
-      del.textContent = "Delete";
-      del.addEventListener("click", async () => {
-        await writeHighlights((await readHighlights()).filter((x) => x.key !== h.key));
-        // Deleting changes the pending count, so the sync button and the badge
-        // both have to follow it - not just the list.
-        await refreshHighlights();
-        await repaintBadge();
-      });
-
-      row.append(quote, source, del);
-      box.append(row);
-    }
-  }
-}
-
-// The badge is the background worker's, so it has to be asked to repaint;
-// without this it keeps showing the count from before the popup drained.
-const repaintBadge = () => browser.runtime.sendMessage({ type: "repaint-badge" }).catch(() => {});
-
-// Set by a failed flush so the sync control offers Retry rather than pretending
-// nothing happened.
-let flushFailed = false;
-
-async function refreshHighlights() {
-  const list = await readHighlights();
-  renderHighlights(list);
-  const waiting = pending(list).length;
-  // The collapsed summary is one line, so the count is the only thing on it
-  // worth reading. Nothing waiting means no control at all rather than a dead
-  // disabled button.
-  $("hcount").textContent = waiting ? `${waiting} waiting` : "";
-  $("sync").hidden = !waiting;
-  $("sync").disabled = false;
-  $("sync").textContent = flushFailed ? `Retry ${waiting}` : `Sync ${waiting} to Notion`;
-}
-
-// A destination is only needed once something is actually queued, so an
-// extension nobody has set up for highlights does not open with an error.
-async function flushHighlights() {
-  if (!pending(await readHighlights()).length) return 0;
-
-  const { destinations } = await browser.storage.local.get("destinations");
-  const dest = destinations?.highlights;
-  // A config stored before pages were allowed carries no kind, and could only
-  // ever have been a database.
-  const kind = dest?.kind ?? "database";
-
-  // The storage choreography lives in highlights.js either way - flushPending
-  // takes the writer, so only the call inside it changes.
-  if (kind === "page") {
-    if (!dest?.pageId) throw new Error("No highlights destination set. Open Settings.");
-    return flushPending((batch) => mcpTool("notion-update-page", {
-      page_id: dest.pageId,
-      command: "insert_content",
-      content: highlightsMarkdown(batch),
-      position: { type: "end" },
-      // allow_async defaults true, which answers with a task rather than a
-      // result - and the batch is only stamped once this returns.
-      allow_async: false
-    }));
-  }
-
-  if (!dest?.dataSourceId) throw new Error("No highlights destination set. Open Settings.");
-  if (!dest.mapping?.text?.name) throw new Error("No passage column mapped. Open Settings.");
-  return flushPending((batch) => mcpTool("notion-create-pages", {
-    parent: { data_source_id: dest.dataSourceId },
-    pages: batch.map((h) => ({ properties: applyMapping(h, dest.mapping) }))
-  }));
+  return { link };
 }
 
 // ---------- UI ----------
 
-// You cannot append blocks to a database, so that choice disappears when the
-// destination is known to be one.
-function syncMode() {
-  const isDatabase = isDatabaseType($("parent").dataset.type);
-  $("mode").disabled = isDatabase;
-  if (isDatabase) $("mode").value = "child";
+// A right-click clips a highlight straight to Notion. One that could not be sent
+// stays queued, and the badge keeps its count - so the popup tries again and says
+// how it went, rather than leaving a number nobody can act on.
+async function retryHighlights() {
+  if (!pending(await readHighlights()).length) return;
+  say("Sending highlights...");
+  const r = await ask("flush-highlights").catch(() => null);
+  if (r?.ok) say(r.sent ? `Sent ${r.sent} highlight${r.sent === 1 ? "" : "s"} to Notion.` : "");
+  else say("Highlights not sent: " + (r?.error || "no answer from the extension."), "error");
 }
+
 
 async function paint() {
   const { access_token, auth_error } = await browser.storage.local.get(["access_token", "auth_error"]);
@@ -366,22 +305,10 @@ if (typeof browser !== "undefined") {
   });
 
   $("picker").addEventListener("change", (e) => {
-    const opt = e.target.selectedOptions[0];
-    if (!opt?.value) return;
-    $("parent").value = opt.value;
-    $("parent").dataset.type = opt.dataset.type || "";
-    syncMode();
-    paintPin();
-    showTags();
-    if (opt.dataset.type === "page") expandPage(opt.value);
-  });
-
-  // Typed by hand means the kind is unknown again - clip() will work it out.
-  $("parent").addEventListener("input", () => {
-    $("parent").dataset.type = "";
-    syncMode();
-    paintPin();
-    $("tagbox").hidden = true;
+    const item = e.target.value && itemFor(e.target.value);
+    // The placeholder is not a destination; fall back to the one in force.
+    if (item) pick(item);
+    else renderPicker();
   });
 
   $("pin").addEventListener("click", () => {
@@ -398,8 +325,8 @@ if (typeof browser !== "undefined") {
     $("clip").disabled = true;
     say("Clipping...");
     try {
-      const { link, mode } = await clip();
-      say(mode === "append" ? "Added to the end of the page." : "Clipped.", "", link);
+      const { link } = await clip();
+      say("Clipped.", "", link);
       $("clip").textContent = "Clip again";
     } catch (e) {
       say("Error: " + e.message, "error");
@@ -411,11 +338,13 @@ if (typeof browser !== "undefined") {
   $("openoptions").addEventListener("click", () => browser.runtime.openOptionsPage());
 
   (async () => {
-    const s = await browser.storage.local.get(["parent", "parentType", "pinned", "clip_error"]);
-    if (s.parent) $("parent").value = s.parent;
-    if (s.parentType) $("parent").dataset.type = s.parentType;
+    const s = await browser.storage.local.get(["parent", "parentType", "parentTitle", "pinned", "clip_error"]);
     pinned = Array.isArray(s.pinned) ? s.pinned : [];
-    syncMode();
+    // `parent` was once whatever was typed in the link box, so it may still be a URL.
+    const id = normalizeId(s.parent);
+    if (id) dest = { id, type: s.parentType || "", title: s.parentTitle || "" };
+    // Signed out with nothing remembered, the markup's own prompt stays.
+    if (dest.id || pinned.length) renderPicker();
     paintPin();
     await paint();
 
@@ -435,49 +364,17 @@ if (typeof browser !== "undefined") {
     }
 
     const { access_token } = await browser.storage.local.get("access_token");
-
-    // Coalesced: a second press while a flush is in flight joins it instead of
-    // writing the same queue to Notion twice.
-    const syncNow = coalesce(flushHighlights);
-
-    // The popup is the app's only surface, so the queue drains here - whichever
-    // tab you happened to land on. A failure leaves it queued for a retry.
-    const flushNow = async () => {
-      // The spec asks the tab to report progress; the control is the only place
-      // to put it, since the status line belongs to whichever tab you are on.
-      if (pending(await readHighlights()).length) {
-        $("sync").disabled = true;
-        $("sync").textContent = "Syncing...";
-      }
-      try {
-        const n = await syncNow();
-        flushFailed = false;
-        if (n) say(`Synced ${n} highlight${n === 1 ? "" : "s"}.`);
-      } catch (e) {
-        flushFailed = true;
-        // Whatever went wrong is about the queue, so show the queue.
-        $("highlights").open = true;
-        say("Highlights: " + e.message, "error");
-      }
-      await refreshHighlights();
-      await repaintBadge();
-    };
-
-    $("sync").addEventListener("click", () => {
-      say("Syncing...");
-      return flushNow();
-    });
-
-    if (access_token) await flushNow();
-    else await refreshHighlights();
-
     if (!access_token) return;
+
+    // Not awaited: the destination list should not wait on it.
+    retryHighlights().catch((e) => say("Highlights: " + e.message, "error"));
+
     showTags();
     await loadPicker("");
+    await settleDest();
 
     // Reopening on a remembered page: surface its inline databases without
     // making the user re-pick the page first.
-    const remembered = normalizeId($("parent").value);
-    if (remembered && !isDatabaseType($("parent").dataset.type)) expandPage(remembered, { silent: true });
+    if (dest.id && !isDatabaseType(dest.type)) expandPage(dest.id, { silent: true });
   })();
 }

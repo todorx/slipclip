@@ -131,6 +131,9 @@ select:disabled { opacity: .45; }
 
 .field { margin-bottom: 12px; }
 
+/* The search box sits directly on the dropdown it fills, as one control. */
+#q { margin-bottom: 6px; }
+
 .pickrow { display: flex; gap: 6px; }
 
 #pin {
@@ -189,13 +192,20 @@ select:disabled { opacity: .45; }
 
 #status a { color: var(--ink); }
 
-/* Dashed: this is the fallback route, not a peer of the dropdown. */
-#parent {
-  background: none;
-  border: 1px dashed var(--edge);
+/* Optional extras stay out of the way until asked for. */
+#more { margin-bottom: 12px; }
+
+#more summary {
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
 }
 
-#parent:focus-visible { border-style: solid; }
+#more summary:hover,
+#more[open] summary { color: var(--ink); }
+
+#more[open] summary { margin-bottom: 10px; }
+#more label:last-child { margin-bottom: 0; }
 
 #clip {
   width: 100%;
@@ -224,8 +234,9 @@ select:disabled { opacity: .45; }
 
 #status[data-tone="error"] { color: var(--bad); }
 
-.note {
-  margin-top: 14px;
+/* How to highlight lives here, since there is no panel to explain it. */
+.foot {
+  margin: 14px 0 0;
   padding-top: 10px;
   font-size: 11px;
   line-height: 1.5;
@@ -233,98 +244,15 @@ select:disabled { opacity: .45; }
   border-top: 1px solid var(--edge);
 }
 
-/* One pane. <details> is the disclosure widget - keyboard and screen reader
-   behaviour come with it, and there is no open/closed state to keep in JS. */
-#highlights {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--edge);
-}
-
-#highlights summary {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-#highlights summary:hover { color: var(--ink); }
-#highlights[open] summary { margin-bottom: 8px; color: var(--ink); }
-
-/* The count is the whole point of the collapsed line, so it carries the mark. */
-#hcount { color: var(--ink); }
-#highlights:not([open]) #hcount:not(:empty) { color: var(--mark); }
-
-.hitem {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--edge);
-  font-size: 12px;
-}
-
-.hitem q { display: block; margin-bottom: 4px; }
-
-.hitem cite {
-  display: block;
-  font-style: normal;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.hitem button {
-  margin-top: 4px;
+.foot button {
+  padding: 0;
   font: inherit;
-  font-size: 11px;
-  color: var(--muted);
+  color: var(--ink);
   background: none;
-  border: 1px solid var(--edge);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.hgroup {
-  margin: 12px 0 4px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.hgroup:first-child { margin-top: 0; }
-
-#hlist { max-height: 320px; overflow-y: auto; }
-
-#sync {
-  width: 100%;
-  margin-top: 12px;
-  padding: 10px;
-  font: inherit;
-  font-weight: 600;
-  color: var(--paper);
-  background: var(--ink);
   border: 0;
-  border-radius: 9px;
+  text-decoration: underline;
   cursor: pointer;
 }
-
-#sync:disabled { opacity: .35; cursor: not-allowed; }
-
-#openoptions {
-  width: 100%;
-  margin-top: 8px;
-  padding: 9px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--muted);
-  background: none;
-  border: 1px solid var(--edge);
-  border-radius: 9px;
-  cursor: pointer;
-}
-
-#openoptions:hover { color: var(--ink); border-color: var(--ink); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
@@ -338,36 +266,14 @@ select:disabled { opacity: .45; }
   <button id="connect">Connect Notion</button>
 </div>
 
-<label>
-  <span class="lab">Search</span>
-  <input id="q" placeholder="Find a page, or leave blank">
-</label>
-
 <div class="field">
-  <label class="lab" for="picker">Destination</label>
+  <label class="lab" for="picker">Clip to</label>
+  <input id="q" aria-label="Search your Notion pages" placeholder="Search your pages">
   <div class="pickrow">
     <select id="picker"><option value="">Connect to load pages</option></select>
     <button id="pin" type="button" aria-pressed="false" title="Pin this destination">☆</button>
   </div>
 </div>
-
-<label>
-  <span class="lab">Or paste a link</span>
-  <input id="parent" placeholder="Notion page or database">
-</label>
-
-<label>
-  <span class="lab">Save as</span>
-  <select id="mode">
-    <option value="child">A new page inside</option>
-    <option value="append">Added to the end</option>
-  </select>
-</label>
-
-<label>
-  <span class="lab">Title</span>
-  <input id="title" placeholder="Defaults to the page title">
-</label>
 
 <div class="field" id="tagbox" role="group" aria-labelledby="taglab" hidden>
   <span class="lab" id="taglab">Tags</span>
@@ -377,23 +283,23 @@ select:disabled { opacity: .45; }
   </div>
 </div>
 
-<label>
-  <span class="lab">Note</span>
-  <textarea id="note" rows="1" placeholder="Why it's worth keeping (optional)"></textarea>
-</label>
+<details id="more">
+  <summary>Add a title or note</summary>
+  <label>
+    <span class="lab">Title</span>
+    <input id="title" placeholder="Defaults to the page title">
+  </label>
+  <label>
+    <span class="lab">Note</span>
+    <textarea id="note" rows="1" placeholder="Why it's worth keeping (optional)"></textarea>
+  </label>
+</details>
 
 <button id="clip" disabled>Clip this page</button>
 
 <div id="status" role="status"></div>
 
-<p class="note">Clips reach only the pages you shared on Notion's consent screen.</p>
-
-<details id="highlights">
-  <summary>Highlights <span id="hcount"></span></summary>
-  <div id="hlist"></div>
-  <button id="sync" hidden>Sync to Notion</button>
-  <button id="openoptions">Open Settings</button>
-</details>
+<p class="foot">To save a passage, select text, right-click and choose Clip highlight to Notion. <button id="openoptions" type="button">Highlight settings</button></p>
 
 
 <script type="module" src="popup.js"></script>

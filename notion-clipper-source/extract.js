@@ -23,7 +23,11 @@ export function extractPage() {
   // YouTube and others put video facts in microdata, not JSON-LD.
   const micro = (prop) => {
     const el = document.querySelector(`[itemprop="${prop}"]`);
-    return (el?.getAttribute("content") || el?.textContent || "").trim();
+    // A value that is itself a thing - YouTube's author is a Person - keeps its
+    // text in a nested name, and the wrapper has neither content nor text.
+    const named = el?.hasAttribute?.("itemscope") ? el.querySelector('[itemprop="name"]') : null;
+    const source = named || el;
+    return (source?.getAttribute("content") || source?.textContent || "").trim();
   };
   const hasVideoMicrodata = Boolean(document.querySelector('[itemtype*="VideoObject" i]'));
 

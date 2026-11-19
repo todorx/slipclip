@@ -1,6 +1,7 @@
-// Highlights are captured by background.js, held in storage.local until the
-// popup flushes them, then written to a Notion database. Everything that shapes
-// a Notion write is pure and covered by test.mjs.
+// Highlights are captured by background.js and sent to Notion straight away;
+// storage.local only holds them while a send is failing or in flight, and
+// afterwards as a record of what was sent. Everything that shapes a Notion write
+// is pure and covered by test.mjs.
 
 import { normalizeId, unwrapPayload } from "./mcp.js";
 
@@ -60,6 +61,15 @@ export function addHighlight(list, record) {
 }
 
 export const pending = (list) => list.filter((h) => !h.synced);
+
+// A sent highlight stays only so that highlighting the same passage again is
+// recognised as a repeat. Nothing in the UI lists or deletes them, so they are
+// capped - newest kept, the way clip history is. A waiting one is never dropped.
+export const SYNCED_CAP = 500;
+export function prune(list, cap = SYNCED_CAP) {
+  let kept = 0;
+  return list.filter((h) => !h.synced || ++kept <= cap);
+}
 
 export function groupBySource(list) {
   const groups = new Map();
@@ -158,7 +168,7 @@ export function parseFetchKind(raw) {
 }
 
 // The page destination's payload: one heading per source, the passages quoted
-// beneath it. Mirrors what buildMarkdown does for an appended clip.
+// beneath it, so passages stacked on one page stay separable.
 // ponytail: every sync appends a fresh section, so two syncs from one article
 // leave two headings. Merging means fetching the page, parsing its blocks and
 // inserting mid-document - a round trip and a parser, for cosmetics.
@@ -223,23 +233,11 @@ export async function writeHighlights(list) {
   return list;
 }
 
-// Collapses concurrent calls into one, so a second Sync press while a flush is
-// in flight joins it rather than writing the same queue to Notion twice.
-export function coalesce(fn) {
-  let running = null;
-  return (...args) => {
-    running ??= Promise.resolve()
-      .then(() => fn(...args))
-      .finally(() => { running = null; });
-    return running;
-  };
-}
-
 // The flush's whole storage story, kept here so it can be tested without a
 // network: read, send, then stamp - against a FRESH read, because a capture
 // that lands mid-request must not be erased by the stale copy we started with.
-// ponytail: at-least-once. A popup killed after Notion commits but before the
-// stamp re-sends that batch on the next open; the window is about a second and
+// ponytail: at-least-once. A worker killed after Notion commits but before the
+// stamp re-sends that batch on the next send; the window is about a second and
 // the failure mode is a visible duplicate row.
 export async function flushPending(createPages, { chunkSize = 50 } = {}) {
   const todo = pending(await readHighlights());
@@ -253,7 +251,7 @@ export async function flushPending(createPages, { chunkSize = 50 } = {}) {
     const stamped = Date.now();
     const done = new Set(batch.map((h) => h.key));
     const fresh = await readHighlights();
-    await writeHighlights(fresh.map((h) => (done.has(h.key) ? { ...h, synced: stamped } : h)));
+    await writeHighlights(prune(fresh.map((h) => (done.has(h.key) ? { ...h, synced: stamped } : h))));
     sent += batch.length;
   }
   return sent;

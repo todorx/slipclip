@@ -1,7 +1,7 @@
 import { signIn, signOut, accessToken, completeSignIn } from "./auth.js";
 import { addHighlight, siteOf, pending as pendingHighlights, readHighlights, writeHighlights } from "./highlights.js";
 import { normalizeId, useTokenSource } from "./mcp.js";
-import { clipTo } from "./clip.js";
+import { clipTo, flushHighlights } from "./clip.js";
 
 if (typeof globalThis.browser === "undefined" && typeof globalThis.chrome !== "undefined")
   globalThis.browser = globalThis.chrome;
@@ -52,9 +52,10 @@ function handle(msg) {
     // save. The badge reports the outcome when the popup is already gone.
     case "clip":
       return runClip(msg.tabId, msg.options);
-    // The popup drains the queue but the badge is this worker's, so it asks.
-    case "repaint-badge":
-      return paintBadge().then(() => ({ ok: true }));
+    // The popup's retry for highlights that failed to send. It goes through the
+    // same queue as a capture, so the two never read-modify-write at once.
+    case "flush-highlights":
+      return serial(sendHighlights);
   }
   return null;
 }
@@ -71,9 +72,9 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // ---------- highlight capture ----------
 
-// Capture lives here, not in the popup, for the same reason sign-in does: the
-// popup is destroyed the moment focus moves, and a context-menu click or a
-// shortcut has to work with no popup open at all.
+// Capture and sending live here, not in the popup, for the same reason sign-in
+// does: the popup is destroyed the moment focus moves, and a context-menu click
+// or a shortcut has to work with no popup open at all.
 
 const MENU_ID = "slipclip-highlight";
 const CLIP_MENU_ID = "slipclip-clip";
@@ -88,20 +89,20 @@ if (browser.contextMenus) {
     await browser.contextMenus.removeAll();
     browser.contextMenus.create({
       id: MENU_ID,
-      title: "Save highlight to SlipClip",
+      title: "Clip highlight to Notion",
       // Registered for selections only, so this path can never fire empty.
       contexts: ["selection"]
     });
-    // With a selection this clips just the passage, as the popup would.
     browser.contextMenus.create({
       id: CLIP_MENU_ID,
-      title: "Clip to Notion",
-      contexts: ["page", "selection"]
+      title: "Clip page to Notion",
+      contexts: ["page"]
     });
   });
 }
 
-// Capture has no UI, so the badge is the only feedback there is.
+// Capture has no UI, so the badge is the only feedback there is: the number of
+// highlights still waiting to be sent, or nothing once they are all in Notion.
 async function paintBadge() {
   const count = pendingHighlights(await readHighlights()).length;
   await browser.action.setBadgeBackgroundColor({ color: "#e8b32c" });
@@ -136,17 +137,43 @@ async function captureNow({ text, url, title }) {
     created: Date.now()
   });
   if (added) await writeHighlights(next);
-  return paintBadge();
+  await paintBadge();
+
+  // A capture is a clip: it goes to Notion now, together with anything an
+  // earlier failure left waiting.
+  const sent = await sendHighlights();
+  // Nothing was waiting, so this passage was already in Notion - say so.
+  if (!added && sent.ok && !sent.sent) return flash("✓", "#2e7d32");
+  // No destination yet: Settings is where to pick one. The highlight waits, and
+  // is sent the moment the choice is saved.
+  if (sent.setup) await browser.runtime.openOptionsPage();
 }
 
-// Two captures in the same tick would race the read-modify-write, so they queue
-// behind each other - the same trick startSignIn uses to dedupe.
+// Sends everything waiting. A failure leaves it queued: the badge keeps its
+// count, and the popup retries when it opens.
+async function sendHighlights() {
+  if (!pendingHighlights(await readHighlights()).length) return { ok: true, sent: 0 };
+  await browser.action.setBadgeBackgroundColor({ color: "#76766e" });
+  await browser.action.setBadgeText({ text: "…" });
+  try {
+    const sent = await flushHighlights();
+    await flash("✓", "#2e7d32");
+    return { ok: true, sent };
+  } catch (e) {
+    console.error("highlight send failed:", e);
+    await flashEmpty();
+    return { ok: false, error: e.message, setup: e.code === "no-destination" };
+  }
+}
+
+// A capture and a send each read the queue and write it back, so they run one
+// at a time - two in the same tick would otherwise race.
 let queue = Promise.resolve();
-function capture(input) {
-  const run = () => captureNow(input);
-  queue = queue.then(run, run);
+function serial(fn) {
+  queue = queue.then(fn, fn);
   return queue;
 }
+const capture = (input) => serial(() => captureNow(input));
 
 // ---------- quick clip ----------
 
@@ -167,8 +194,8 @@ async function runClip(tabId, options) {
   }
 }
 
-// The shortcut and the menu clip straight to the destination the popup last
-// clipped to. With none yet, the popup opens so one can be picked; the badge is
+// The shortcut and the menu clip straight to the destination last picked in the
+// popup. With none yet, the popup opens so one can be picked; the badge is
 // the only other feedback, and a failure waits in storage for the next popup.
 async function quickClip(tab) {
   if (!tab?.id) return;

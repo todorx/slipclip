@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SlipClip for Notion",
-  "version": "1.4.0",
+  "version": "1.5.1",
   "description": "Clip an article, video or link into Notion. Sign in with Notion, nothing to paste.",
   "permissions": [
     "activeTab",
@@ -32,7 +32,7 @@
     },
     "save-highlight": {
       "suggested_key": { "default": "Alt+Shift+H" },
-      "description": "Save the selected text as a highlight"
+      "description": "Clip the selected text to Notion as a highlight"
     }
   },
   "options_ui": {

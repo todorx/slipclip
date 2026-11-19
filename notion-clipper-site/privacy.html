@@ -46,7 +46,7 @@
     "name": "SlipClip",
     "url": "https://slipclip.todorx.dev/"
   },
-  "dateModified": "2026-09-21"
+  "dateModified": "2026-11-19"
 }
 </script>
 </head>
@@ -68,7 +68,7 @@
   <article class="doc">
     <div class="eyebrow">Privacy</div>
     <h1>Privacy Policy</h1>
-    <p class="updated">EFFECTIVE 17 SEPTEMBER 2026 · VERSION 1.4.0</p>
+    <p class="updated">EFFECTIVE 19 NOVEMBER 2026 · VERSION 1.5.1</p>
 
     <p>
       SlipClip for Notion is a Firefox and Chrome extension that copies web pages into your own Notion
@@ -93,7 +93,8 @@
     <ul>
       <li>Your Notion OAuth access token, refresh token and expiry time.</li>
       <li>The OAuth client identifier your copy of the extension registered with Notion.</li>
-      <li>The last destination you clipped to, so the popup can remember it.</li>
+      <li>The last destination you picked &mdash; its Notion id, title and whether it is a page
+        or a database &mdash; so the popup can remember it.</li>
       <li>Destinations you pinned &mdash; their Notion id, title and whether each is a page or
         a database.</li>
       <li>The addresses of the last 500 pages you clipped, each with the link to the Notion page
@@ -102,10 +103,10 @@
       <li>An error message from the most recent failed sign-in, and from the most recent failed
         clip made with the keyboard shortcut or the right-click menu, so it can be shown to
         you.</li>
-      <li>Highlights you have saved but not yet synced &mdash; the passage itself, the page's
-        address and title, the site it came from, and when you saved it. They are held here so
-        they survive closing the tab, and each one stays until it reaches Notion or you delete
-        it from the Highlights tab.</li>
+      <li>Highlights you have clipped &mdash; the passage itself, the page's address and title,
+        the site it came from, and when you saved it. One is held here while it is being sent
+        to Notion, or until a failed send can be retried; afterwards the newest 500 are kept so
+        the same passage is not saved twice.</li>
       <li>The database or page you chose for highlights, and — for a database — which of its columns holds which field.</li>
     </ul>
     <p>
@@ -129,16 +130,15 @@
         workspace. When the destination is a database, a request for that database first, so
         those details can go in its matching columns &mdash; and, if you typed a tag the
         database does not have yet, a request adding it to that database's tag column.</li>
-      <li><strong>When you pin a pasted link:</strong> a request for that page or database, so
-        the pin can show its title.</li>
       <li><strong>When you type in the search box:</strong> the search term, to find
         destinations.</li>
       <li><strong>When you select a destination page:</strong> a request for that page, so its
         inline databases can be listed.</li>
-      <li><strong>When you open the popup with highlights waiting:</strong> those highlights and
-        the details listed above, written as rows into the database you chose, or appended as
-        quotes to the page you chose. Nothing is sent while you are only saving highlights
-        &mdash; capture writes to your device alone.</li>
+      <li><strong>When you clip a highlight, with the right-click menu or its shortcut:</strong>
+        the highlight and the details listed above, written as a row into the database you
+        chose, or appended as a quote to the page you chose. If an earlier send failed, whatever
+        is still waiting goes with it, or when you next open the popup. Nothing is sent while
+        you are only reading.</li>
       <li><strong>When you set up the highlights destination:</strong> a request for that page
         or database, so its kind and columns can be read &mdash; or a request to create a
         database, if you asked for one.</li>
@@ -156,7 +156,7 @@
         at. No other tab is accessed and nothing runs in the background.</li>
       <li><code>storage</code> — to keep the items listed above.</li>
       <li><code>identity</code> — to run Notion's sign-in flow and receive the result.</li>
-      <li><code>contextMenus</code> — to add "Clip to Notion" and "Save highlight to SlipClip"
+      <li><code>contextMenus</code> — to add "Clip page to Notion" and "Clip highlight to Notion"
         to the right-click menu.</li>
       <li><code>declarativeNetRequest</code> — used for exactly one rule: removing the browser
         <code>Origin</code> header from requests to <code>mcp.notion.com</code>, which that
@@ -201,7 +201,7 @@
   </article>
 
   <footer class="colophon">
-    <span>SlipClip for Notion · v1.4.0 · by <a href="https://todorx.dev/">Todor Todorovski</a> · Not affiliated with Notion Labs, Inc.</span>
+    <span>SlipClip for Notion · v1.5.1 · by <a href="https://todorx.dev/">Todor Todorovski</a> · Not affiliated with Notion Labs, Inc.</span>
     <nav class="colophon-nav">
       <a href="index.html">Home</a>
       <a href="https://github.com/todorx/slipclip">GitHub</a>
