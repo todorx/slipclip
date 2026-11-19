@@ -33,7 +33,7 @@
 - Database rows come filled in: URL, tags, and author / site / published date / note when the database has columns named for them. Pages get the site's preview image as cover and its icon.
 - Notes, pinned destinations, an "Already clipped" warning with a link to the earlier page, and an **Open in Notion** link after every clip.
 - Quick clip: `Alt+Shift+C` or **Clip page to Notion** in the context menu clips straight to the last destination.
-- Highlights: select text, right-click, **Clip highlight to Notion** (or `Alt+Shift+H`) — it goes straight into a Notion database, or onto the end of a page.
+- Highlights: select text, right-click, **Clip highlight to Notion** (or `Alt+Shift+H`) — it goes straight into Notion as a new page, in the same destination you clip to.
 - No build step, no dependencies. Just load `manifest.json`.
 
 ## Quick start
@@ -52,7 +52,7 @@ A database destination is read once when you pick it, so the popup can offer its
 
 **Quick clip** (`Alt+Shift+C`, or **Clip page to Notion** in the context menu) skips the popup and clips to the destination you last picked in it — no note, tags or custom title. The badge shows `…`, then `✓` or `!`; a failure is explained the next time you open the popup. With no destination yet, it opens the popup instead.
 
-**Highlights** are for the passage, not the page. Select text and right-click → **Clip highlight to Notion** (the item only appears when text is selected), or press `Alt+Shift+H`. It is sent to Notion straight away; the badge shows `…`, then `✓` or `!`. Pick where highlights go in **Highlight settings**, the link at the bottom of the popup: a database gets one row per passage, a page gets them appended as quotes grouped by source, or let it create a database for you. The first time, with nowhere to send it yet, the right-click opens Settings and the highlight goes out the moment you save a destination. If a send fails, the highlight waits, the badge keeps its count, and the popup retries when you open it. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
+**Highlights** are for the passage, not the page. Select text and right-click → **Clip highlight to Notion** (the item only appears when text is selected), or press `Alt+Shift+H`. It is sent to Notion straight away; the badge shows `…`, then `✓` or `!`. Every highlight is a new page, the way a clip is: inside the page you picked in the popup, or a row if that is a database. To send highlights somewhere else, use **Send highlights elsewhere**, the link at the bottom of the popup (or let it create a database for you). With no destination picked yet, the right-click opens the popup, and the highlight goes out the moment you pick one. If a send fails, the highlight waits, the badge keeps its count, and the popup retries when you open it. The same passage saved twice, or from two URLs of one article, is one highlight. Context menu and shortcut are desktop-only; Firefox for Android has neither API.
 
 
 A text selection outranks everything: highlight something and the clip is that quote alone. Article bodies cap at 60,000 characters and are marked when truncated.

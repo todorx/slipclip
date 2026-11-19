@@ -127,12 +127,16 @@ async function pinCurrent() {
 
 // The dropdown's choice becomes the destination, and is remembered at once -
 // a popup that closes before anything is clipped should still reopen on it.
-function pick(item) {
+async function pick(item) {
   dest = { id: item.id, type: item.type || "", title: item.title || "" };
-  browser.storage.local.set({ parent: dest.id, parentType: dest.type, parentTitle: dest.title });
+  await browser.storage.local.set({ parent: dest.id, parentType: dest.type, parentTitle: dest.title });
   paintPin();
   showTags();
-  if (dest.type === "page") expandPage(dest.id);
+  // A highlight made before there was anywhere to send it has been waiting for
+  // this. The status line is then its to use, so the page lookup stays quiet.
+  const waiting = pending(await readHighlights()).length > 0;
+  if (dest.type === "page") expandPage(dest.id, { silent: waiting });
+  await retryHighlights();
 }
 
 // A destination stored before titles and kinds were kept has neither, so the
@@ -270,6 +274,8 @@ async function retryHighlights() {
   say("Sending highlights...");
   const r = await ask("flush-highlights").catch(() => null);
   if (r?.ok) say(r.sent ? `Sent ${r.sent} highlight${r.sent === 1 ? "" : "s"} to Notion.` : "");
+  // Nothing is wrong: it is waiting for a destination, and this is where to pick one.
+  else if (r?.setup) say("Pick where clips should go and your highlight is sent there.");
   else say("Highlights not sent: " + (r?.error || "no answer from the extension."), "error");
 }
 
@@ -307,7 +313,7 @@ if (typeof browser !== "undefined") {
   $("picker").addEventListener("change", (e) => {
     const item = e.target.value && itemFor(e.target.value);
     // The placeholder is not a destination; fall back to the one in force.
-    if (item) pick(item);
+    if (item) pick(item).catch((err) => say("Error: " + err.message, "error"));
     else renderPicker();
   });
 

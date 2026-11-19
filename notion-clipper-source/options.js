@@ -92,7 +92,7 @@ async function store(dest) {
 function showSaved(name, kind) {
   $("saved").hidden = false;
   $("saved").textContent = kind === "page"
-    ? `Appending to ${name || "the selected page"}. New highlights are added to the end, grouped by source.`
+    ? `Highlights become new pages inside ${name || "the selected page"}.`
     : `Saving into ${name || "the selected database"}. New highlights are added there, one row each.`;
 }
 
@@ -114,7 +114,7 @@ async function useDestination(id, name) {
     current = { kind: "page", pageId: normalizeId(id) || id, name: label };
     await store(current);
     showSaved(label, "page");
-    return say("Saved. Nothing to map - passages are appended as quotes.");
+    return say("Saved. Nothing to map: each highlight becomes a new page inside it.");
   }
 
   const dataSourceId = parseDataSourceId(raw);

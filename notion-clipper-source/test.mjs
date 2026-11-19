@@ -5,7 +5,7 @@ import { normalizeId, parseResults, parseSSE, errorText, unwrapPayload, useToken
 import { optionLabel, parseChildDatabases, togglePin } from "./popup.js";
 import { buildMarkdown, formatDuration, clipProperties, tagsColumn, notionLink, rememberClip, findClip, noteCallout, addTagsStatement, getTabData, clipTo, flushHighlights } from "./clip.js";
 import { extractPage } from "./extract.js";
-import { canonicalUrl, siteOf, addHighlight, pending, groupBySource, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightsMarkdown, flushPending, prune, readHighlights, writeHighlights } from "./highlights.js";
+import { canonicalUrl, siteOf, addHighlight, pending, applyMapping, parseDataSourceId, parseProperties, matchProperties, parseFetchKind, highlightPage, flushPending, prune, readHighlights, writeHighlights } from "./highlights.js";
 
 // RFC 7636 Appendix B test vector
 assert.equal(
@@ -243,12 +243,6 @@ assert.equal(addHighlight([], { text: "short", url: articleA, title: "A" }).list
 
 assert.equal(pending(library).length, 3, "everything starts unsynced");
 assert.equal(pending([{ synced: 1 }, { synced: null }]).length, 1, "synced highlights are done");
-
-const grouped = groupBySource([
-  { canonical: articleA, key: "1" }, { canonical: articleB, key: "2" }, { canonical: articleA, key: "3" }
-]);
-assert.equal(grouped.size, 2, "one group per source");
-assert.equal(grouped.get(articleA).length, 2);
 
 // A property called URL collides with a reserved name and must be prefixed.
 const mapping = {
@@ -541,26 +535,36 @@ assert.equal(parseDataSourceId(fetched), "55555555-5555-4555-8555-555555555555",
 assert.equal(parseFetchKind(dbPayload), "database", "a database payload reads as a database");
 assert.equal(parseFetchKind("neither one"), null, "anything else is unknown, not guessed");
 
-// Appending to a page: one heading per source, the passages quoted beneath it.
-const md = highlightsMarkdown([
-  { key: "1", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A", site: "example.com", text: "Line one\nLine two", created: Date.UTC(2026, 8, 21) },
-  { key: "2", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A", site: "example.com", text: "Second passage.", created: Date.UTC(2026, 8, 21) },
-  { key: "3", canonical: "https://example.com/b", url: "https://example.com/b", title: "Article B", site: "example.com", text: "Elsewhere.", created: Date.UTC(2026, 8, 22) }
-]);
-assert.equal((md.match(/^## /gm) || []).length, 2, "one heading per source, not per passage");
-assert.ok(md.startsWith("## [Article A](https://example.com/a)"), "the source you saved into most recently leads");
-assert.match(md, /\*example\.com · 2026-09-21\*/, "the facts line carries site and date");
-assert.ok(md.includes("> Line one\n> Line two"), "a multi-line passage stays one blockquote, not two");
-assert.ok(md.indexOf("Second passage") < md.indexOf("## [Article B]"), "passages stay under their own source");
-assert.ok(!md.includes("\n\n\n"), "no stacked blank lines between groups");
-assert.equal(highlightsMarkdown([]), "", "nothing queued renders nothing at all");
-
-// The library marks a clipped passage; the page has to say so too.
+// A highlight is a page of its own: the passage is the title, the quote is the body.
+const hp = highlightPage({
+  key: "1", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A",
+  site: "example.com", author: "R. Ellis", text: "Line one\nLine two", created: Date.UTC(2026, 8, 21)
+});
+assert.equal(hp.title, "Line one Line two", "the passage on one line is the page title");
+assert.ok(hp.content.startsWith("> Line one\n> Line two"), "a multi-line passage stays one blockquote, not two");
 assert.match(
-  highlightsMarkdown([{ key: "x", canonical: "https://example.com/a", url: "https://example.com/a", title: "A", text: "Cut", truncated: true, created: Date.UTC(2026, 8, 21) }]),
+  hp.content,
+  /\n\n— \[Article A\]\(https:\/\/example\.com\/a\) · example\.com · R\. Ellis · 2026-09-21$/,
+  "where it came from follows the quote"
+);
+const longPage = highlightPage({ key: "2", url: "https://example.com/a", text: "word ".repeat(60) });
+assert.ok(longPage.title.length <= 80 && longPage.title.endsWith("…"), "a long passage is shortened for the title");
+assert.ok(longPage.content.includes("word ".repeat(60).trim()), "but the page holds all of it");
+assert.match(
+  highlightPage({ key: "3", url: "https://example.com/a", title: "A", text: "Cut", truncated: true }).content,
   /> Cut…/,
   "a truncated passage is marked in the page as well"
 );
+assert.ok(
+  highlightPage({ key: "4", url: "https://example.com/a", text: "a <b>tag</b> here" }).content.includes("a \\<b>tag\\</b> here"),
+  "a < in the passage cannot open a tag in Notion's markup"
+);
+assert.match(
+  highlightPage({ key: "5", url: "https://example.com/a_(b)", title: "T", text: "x" }).content,
+  /\(https:\/\/example\.com\/a_%28b%29\)/,
+  "parentheses in the address cannot end the link early"
+);
+assert.equal(highlightPage({ key: "6", text: "   " }).title, "Highlight", "an empty passage still gets a title");
 
 // extractPage() runs inside the page and is serialized by executeScript, so it
 // stays self-contained - which is also why plain Node cannot run it without a
@@ -883,14 +887,17 @@ assert.ok(wiki.includes("[Python](https://en.wikipedia.org/wiki/Python_%28progra
   delete globalThis.browser;
 }
 
-// 8. flushHighlights: where a waiting highlight goes depends on the destination.
+// 8. flushHighlights: every highlight becomes a new page, and where it goes follows the popup.
 {
   const store = {};
   const calls = [];
   const realFetch = globalThis.fetch;
+  const DB = "88888888-8888-4888-8888-888888888888";
+  const SOURCE = "55555555-5555-4555-8555-555555555555";
+  const PAGE = "66666666-6666-4666-8666-666666666666";
   useTokenSource(async () => "tok");
   globalThis.browser = { storage: { local: {
-    get: async (k) => ({ [k]: store[k] }),
+    get: async (k) => Object.fromEntries([].concat(k).map((x) => [x, store[x]])),
     set: async (o) => Object.assign(store, o)
   } } };
   globalThis.fetch = async (_url, init) => {
@@ -902,54 +909,87 @@ assert.ok(wiki.includes("[Python](https://en.wikipedia.org/wiki/Python_%28progra
     }
     if (req.method === "notifications/initialized") return new Response(null, { status: 202 });
     calls.push(req.params);
-    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ text: "{}" }] } }), {
+    // What notion-fetch says about the popup's database: its source and its columns.
+    const text = req.params.name === "notion-fetch"
+      ? JSON.stringify({
+          metadata: { type: "database" },
+          text: `<database url="https://app.notion.com/p/${DB.replace(/-/g, "")}" data-source-url="collection://${SOURCE}">Reading list</database>\n`
+            + "<data-source-state>" + JSON.stringify({ schema: { a: { name: "Name", type: "title" }, b: { name: "URL", type: "url" } } }) + "</data-source-state>"
+        })
+      : "{}";
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ text }] } }), {
       status: 200, headers: { "Content-Type": "application/json" }
     });
   };
+  const writes = () => calls.filter((c) => c.name !== "notion-fetch");
   const waiting = () => [{
     key: "k1", canonical: "https://example.com/a", url: "https://example.com/a", title: "Article A",
     site: "example.com", text: "A passage.", created: Date.UTC(2026, 10, 19), synced: null
   }];
+  const reset = () => { calls.length = 0; store.highlights = waiting(); delete store.destinations; delete store.parent; delete store.parentType; };
 
   store.highlights = [];
   assert.equal(await flushHighlights(), 0, "nothing waiting sends nothing");
   assert.equal(calls.length, 0, "and does not even look for a destination");
 
-  store.highlights = waiting();
-  await assert.rejects(() => flushHighlights(), (e) => e.code === "no-destination" && /Highlight settings/.test(e.message),
-    "no destination is reported as such, so the worker can open Settings");
+  // No destination anywhere: the worker opens the popup, so the error says so.
+  reset();
+  await assert.rejects(() => flushHighlights(), (e) => e.code === "no-destination" && /Pick one in the popup/.test(e.message),
+    "no destination is reported as such, so the worker can open the popup");
   assert.equal(calls.length, 0, "and nothing is sent");
   assert.equal(pending(store.highlights).length, 1, "the highlight stays queued");
 
-  store.destinations = { highlights: { kind: "database", dataSourceId: "55555555-5555-4555-8555-555555555555" } };
-  await assert.rejects(() => flushHighlights(), /No passage column mapped/, "a database with no passage column is not guessed at");
-
-  store.destinations = { highlights: {
-    kind: "database",
-    dataSourceId: "55555555-5555-4555-8555-555555555555",
-    mapping: { text: { name: "Highlight", type: "TITLE" }, url: { name: "URL", type: "URL" } }
-  } };
+  // The default: the destination picked in the popup. A page gets a new child page.
+  reset();
+  store.parent = PAGE; store.parentType = "page";
   assert.equal(await flushHighlights(), 1);
-  assert.equal(calls[0].name, "notion-create-pages", "a database gets a row");
-  assert.deepEqual(calls[0].arguments.parent, { data_source_id: "55555555-5555-4555-8555-555555555555" });
-  assert.equal(calls[0].arguments.pages[0].properties.Highlight, "A passage.", "the passage goes in the mapped column");
-  assert.equal(calls[0].arguments.pages[0].properties["userDefined:URL"], "https://example.com/a", "a URL column is spelled the way Notion wants");
-  assert.equal(pending(store.highlights).length, 0, "and it is stamped as sent");
+  assert.equal(calls.length, 1, "a page destination needs no extra read");
+  assert.equal(calls[0].name, "notion-create-pages", "a highlight is a new page, never an append");
+  assert.deepEqual(calls[0].arguments.parent, { page_id: PAGE });
+  assert.equal(calls[0].arguments.pages[0].properties.title, "A passage.", "the passage is the title");
+  assert.ok(calls[0].arguments.pages[0].content.startsWith("> A passage."), "and the page holds the quote");
+  assert.match(calls[0].arguments.pages[0].content, /— \[Article A\]\(https:\/\/example\.com\/a\) · example\.com · 2026-11-19/);
+  assert.equal(calls[0].arguments.allow_async, false, "and waits for the result before stamping");
+  assert.equal(pending(store.highlights).length, 0, "it is stamped as sent");
 
-  store.highlights = waiting();
-  store.destinations = { highlights: { kind: "page", pageId: "66666666-6666-4666-8666-666666666666" } };
+  // ...and a database gets a new row, its columns matched from the schema.
+  reset();
+  store.parent = DB; store.parentType = "database";
   assert.equal(await flushHighlights(), 1);
-  assert.equal(calls[1].name, "notion-update-page", "a page gets the passage appended");
-  assert.equal(calls[1].arguments.page_id, "66666666-6666-4666-8666-666666666666");
-  assert.equal(calls[1].arguments.command, "insert_content");
-  assert.deepEqual(calls[1].arguments.position, { type: "end" }, "at the end");
-  assert.equal(calls[1].arguments.allow_async, false, "and waits for the result before stamping");
-  assert.ok(calls[1].arguments.content.startsWith("## [Article A](https://example.com/a)"));
+  assert.equal(calls[0].name, "notion-fetch", "a database is read first, for its source and columns");
+  assert.equal(writes()[0].name, "notion-create-pages");
+  assert.deepEqual(writes()[0].arguments.parent, { data_source_id: SOURCE });
+  assert.equal(writes()[0].arguments.pages[0].properties.Name, "A passage.", "the passage goes in the title column");
+  assert.equal(writes()[0].arguments.pages[0].properties["userDefined:URL"], "https://example.com/a", "a URL column is spelled the way Notion wants");
 
-  store.highlights = waiting();
-  store.destinations = { highlights: { dataSourceId: "55555555-5555-4555-8555-555555555555", mapping: { text: { name: "Highlight", type: "TITLE" } } } };
+  // A destination whose kind was never settled is worked out from what Notion says.
+  reset();
+  store.parent = DB; store.parentType = "";
+  assert.equal(await flushHighlights(), 1);
+  assert.deepEqual(writes()[0].arguments.parent, { data_source_id: SOURCE }, "an unsettled destination is read, not guessed");
+
+  // A destination chosen in Settings wins over the popup's.
+  reset();
+  store.parent = PAGE; store.parentType = "page";
+  store.destinations = { highlights: { kind: "database", dataSourceId: SOURCE, mapping: { text: { name: "Highlight", type: "TITLE" } } } };
+  assert.equal(await flushHighlights(), 1);
+  assert.deepEqual(calls[0].arguments.parent, { data_source_id: SOURCE }, "Settings overrides the popup");
+  assert.equal(calls[0].arguments.pages[0].properties.Highlight, "A passage.");
+
+  reset();
+  store.destinations = { highlights: { kind: "database", dataSourceId: SOURCE } };
+  await assert.rejects(() => flushHighlights(), /No passage column mapped/, "a Settings database with no passage column is not guessed at");
+
+  reset();
+  store.destinations = { highlights: { kind: "page", pageId: PAGE } };
+  assert.equal(await flushHighlights(), 1);
+  assert.equal(calls[0].name, "notion-create-pages", "a page chosen in Settings gets new pages too, not appended quotes");
+  assert.deepEqual(calls[0].arguments.parent, { page_id: PAGE });
+
+  reset();
+  store.destinations = { highlights: { dataSourceId: SOURCE, mapping: { text: { name: "Highlight", type: "TITLE" } } } };
   await flushHighlights();
-  assert.equal(calls[2].name, "notion-create-pages", "a config stored before pages were allowed is a database");
+  assert.deepEqual(calls[0].arguments.parent, { data_source_id: SOURCE }, "a config stored before pages were allowed is a database");
 
   globalThis.fetch = realFetch;
   delete globalThis.browser;
